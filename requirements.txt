@@ -22,7 +22,7 @@ oracledb==3.4.2
     # via -r requirements.in
 packaging==26.0
     # via pytest
-pandas==3.0.0
+pandas==2.0.3
     # via -r requirements.in
 pluggy==1.6.0
     # via pytest
@@ -44,6 +44,8 @@ python-dateutil==2.9.0.post0
     # via pandas
 python-dotenv==1.2.1
     # via pydantic-settings
+pytz==2025.2
+    # via pandas
 six==1.17.0
     # via python-dateutil
 sqlalchemy==2.0.46
