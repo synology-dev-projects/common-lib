@@ -1,0 +1,145 @@
+name: Branch-Based Deployment Pipeline
+
+on:
+  push:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy-branch:
+    runs-on: self-hosted
+
+    steps:
+      # 1. CLEANUP (Runner Workspace)
+      - name: Clean Runner Workspace
+        run: |
+          echo "🧹 Cleaning previous runner artifacts..."
+          rm -rf ./*
+          rm -rf ./.??*
+
+      # 2. CHECKOUT
+          # --- SETUP ---
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          # Use your PAT here instead of the default token
+          token: ${{ secrets.MY_GITHUB_PAT }}
+
+      # 3. SETUP VARIABLES (Calculate Path EARLY)
+      - name: Configure Deployment Paths
+        run: |
+          # Load Synology Root
+          umask 002
+          cat ../../conf/syno_paths.env >> $GITHUB_ENV
+          
+          # Calculate Variables
+          BRANCH_NAME="${{ github.ref_name }}"
+          REPO_NAME="${{ github.event.repository.name }}"
+          
+          # Read SYNOLOGY_ROOT_PATH from the file we just loaded
+          source ../../conf/syno_paths.env
+          TARGET_PATH="${SYNOLOGY_ROOT_PATH}/${BRANCH_NAME}/${REPO_NAME}"
+          
+          echo "📂 Target Path: $TARGET_PATH"
+          echo "DEPLOY_DIR=$TARGET_PATH" >> $GITHUB_ENV
+
+      # 4. DEPLOY CODE (Copy files BEFORE installing deps)
+      - name: Sync Code to Project Root
+        run: |
+          TARGET_PATH="${{ env.DEPLOY_DIR }}"
+          mkdir -p "$TARGET_PATH"
+
+          # Wipe OLD source code to ensure deleted files are removed
+          # NOTE: We do NOT delete .venv, allowing it to persist!
+          echo "🧹 Wiping old src/, tests/, and configs..."
+          rm -rf "$TARGET_PATH/src"
+          rm -rf "$TARGET_PATH/tests"
+          rm -f "$TARGET_PATH/verify.sh"
+          rm -f "$TARGET_PATH/requirements.txt"
+          rm -f "$TARGET_PATH/requirements.in"
+
+          # Copy NEW files to the persistent project root
+          echo "🚀 Copying new files..."
+          cp -r src "$TARGET_PATH/"
+          cp -r tests "$TARGET_PATH/"
+          cp verify.sh "$TARGET_PATH/"
+          
+          sudo chown -R 1026:100 "$TARGET_PATH"
+          chmod -R 775 "$TARGET_PATH"
+          
+          
+          # Copy requirement files if they exist
+          [ -f requirements.txt ] && cp requirements.txt "$TARGET_PATH/"
+          [ -f requirements.in ] && cp requirements.in "$TARGET_PATH/"
+
+      # 5. MANAGE VENV (Run execution INSIDE Project Root)
+      - name: Update Project Virtualenv
+        run: |
+          cd "${{ env.DEPLOY_DIR }}"
+          
+          # 1. Create .venv only if it doesn't exist (Persists between runs!)
+          if [ ! -d ".venv" ]; then
+            echo "🔨 Creating new virtual environment in project root..."
+            python3 -m venv .venv
+          else
+            echo "✅ Existing .venv found. Updating..."
+          fi
+          
+          # 2. Activate
+          source .venv/bin/activate
+          pip install --upgrade pip pip-tools
+          
+          # 3. Compile/Install
+          if [ -f "requirements.in" ]; then
+            echo "🔄 Compiling requirements.in..."
+            pip-compile requirements.in --output-file=requirements.txt
+          fi
+          
+          echo "📦 Installing dependencies..."
+          pip install -r requirements.txt
+          
+          # 4. Add to Path (so verify.sh finds it)
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+
+      # 6. SECRET INJECTION
+      - name: Create Runtime .env File
+        run: |
+          ENV_FILE="${{ env.DEPLOY_DIR }}/.env"
+          echo "Generating secure .env file at $ENV_FILE..."
+          
+          echo "ORACLE_USER=${{ secrets.ORACLE_USER }}" > "$ENV_FILE"
+          echo "ORACLE_PASS=${{ secrets.ORACLE_PASS }}" >> "$ENV_FILE"
+          echo "ORACLE_HOST_IP=${{ secrets.ORACLE_HOST_IP }}" >> "$ENV_FILE"
+          echo "ORACLE_SERVICE=${{ secrets.ORACLE_SERVICE }}" >> "$ENV_FILE"
+          echo "TE_COOKIE=${{ secrets.TE_COOKIE }}" >> "$ENV_FILE"
+          
+          chmod 644 "$ENV_FILE"
+
+      # 7. VERIFICATION
+      - name: Run Verification
+        run: |
+          echo "🧪 Testing branch: ${{ github.ref_name }}"
+          cd "${{ env.DEPLOY_DIR }}"
+          
+          # Force the environment to use the local venv first
+          export PATH="$(pwd)/.venv/bin:$PATH"
+          
+          chmod +x verify.sh
+          ./verify.sh
+
+      # 8. MERGE LOGIC (Unchanged)
+      - name: Auto-Promote to Master
+        if: github.ref_name == 'develop'
+        run: |
+          echo "✅ Develop verified. Promoting to Master..."
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          git fetch origin develop
+          git checkout master
+          git pull origin master
+          git merge origin/develop --no-ff -m "Auto-merge develop to master [Skip CI]"
+          git push origin master
