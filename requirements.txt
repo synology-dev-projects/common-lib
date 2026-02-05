@@ -16,8 +16,10 @@ greenlet==3.3.1
     # via sqlalchemy
 iniconfig==2.3.0
     # via pytest
-numpy==2.4.2
-    # via pandas
+numpy==1.26.4
+    # via
+    #   -r requirements.in
+    #   pandas
 oracledb==3.4.2
     # via -r requirements.in
 packaging==26.0
@@ -43,7 +45,9 @@ pytest==9.0.2
 python-dateutil==2.9.0.post0
     # via pandas
 python-dotenv==1.2.1
-    # via pydantic-settings
+    # via
+    #   -r requirements.in
+    #   pydantic-settings
 pytz==2025.2
     # via pandas
 six==1.17.0

@@ -1,6 +1,13 @@
+# Core Data Libraries (Pinned for Python 3.8 compatibility)
+pandas<2.2.0
+numpy<2.0.0
+
+# Database
+sqlalchemy
 oracledb
-pandas
-pydantic
-pydantic_settings
+
+# Utilities
+python-dotenv
+pydantic>=2.0
+pydantic-settings
 pytest
-SQLAlchemy
