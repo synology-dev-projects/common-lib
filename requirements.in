@@ -1,16 +1,14 @@
 # requirements.in
 
 # --- PYTHON 3.8 COMPATIBILITY PINS ---
-# Numpy 1.25+ dropped support for Python 3.8
-numpy<1.25.0
 
-# Pandas 2.1+ dropped support for Python 3.8
-pandas<2.1.0
+pandas<=2.0.3
 
 # --- LIBRARIES ---
 sqlalchemy
 oracledb
-pydantic>=2.0
+pydantic
 pydantic-settings
 python-dotenv
 pytest
+numpy
