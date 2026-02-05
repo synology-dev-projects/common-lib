@@ -1,6 +1,8 @@
 # tests/conftest.py
 import pytest
-import config.main_config as config
+import src.config.main_config as config
+
+
 
 
 @pytest.fixture(scope="session")
