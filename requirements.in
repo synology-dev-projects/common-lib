@@ -1,13 +1,16 @@
-# Core Data Libraries (Pinned for Python 3.8 compatibility)
-pandas<2.2.0
-numpy<2.0.0
+# requirements.in
 
-# Database
+# --- PYTHON 3.8 COMPATIBILITY PINS ---
+# Numpy 1.25+ dropped support for Python 3.8
+numpy<1.25.0
+
+# Pandas 2.1+ dropped support for Python 3.8
+pandas<2.1.0
+
+# --- LIBRARIES ---
 sqlalchemy
 oracledb
-
-# Utilities
-python-dotenv
 pydantic>=2.0
 pydantic-settings
+python-dotenv
 pytest
