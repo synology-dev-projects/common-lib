@@ -24,7 +24,7 @@ oracledb==3.4.2
     # via -r requirements.in
 packaging==26.0
     # via pytest
-pandas==2.0.3
+pandas==2.1.4
     # via -r requirements.in
 pluggy==1.6.0
     # via pytest
