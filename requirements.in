@@ -1,14 +1,14 @@
-# requirements.in
+# --- PYTHON 3.8 PINS ---
+numpy<1.25.0
+pandas<2.1.0
 
-# --- PYTHON 3.8 COMPATIBILITY PINS ---
-
-pandas<=2.0.3
-
-# --- LIBRARIES ---
+# --- CORE LIBRARIES ---
 sqlalchemy
 oracledb
-pydantic
-pydantic-settings
 python-dotenv
 pytest
-numpy
+
+# --- PREVENT DOWNGRADE ---
+# We force these to be modern so they share the same 'typing-extensions'
+pydantic>=2.0
+pydantic-settings>=2.0
