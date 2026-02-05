@@ -56,12 +56,8 @@ jobs:
           # Wipe OLD source code to ensure deleted files are removed
           # NOTE: We do NOT delete .venv, allowing it to persist!
           echo "🧹 Wiping old src/, tests/, and configs..."
-          rm -rf "$TARGET_PATH/src"
-          rm -rf "$TARGET_PATH/tests"
-          rm -f "$TARGET_PATH/verify.sh"
-          rm -f "$TARGET_PATH/requirements.txt"
-          rm -f "$TARGET_PATH/requirements.in"
-
+          rm -rf "$TARGET_PATH/*"
+ 
           # Copy NEW files to the persistent project root
           echo "🚀 Copying new files..."
           cp -r src "$TARGET_PATH/"
