@@ -8,7 +8,7 @@ import sys
 # 1. Calculate the Dynamic Path
 # Start: git-repos/env/project_root/src/connectors/main_config.py -> End: git-repos/conf/.env
 current_file_path = Path(__file__).resolve()
-project_root_path = current_file_path.parent.parent
+project_root_path = current_file_path.parent.parent.parent
 target_env_path = str(project_root_path / ".env")
 
 

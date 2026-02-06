@@ -56,12 +56,9 @@ jobs:
           # Wipe OLD source code to ensure deleted files are removed
           # NOTE: We do NOT delete .venv, allowing it to persist!
           echo "🧹 Wiping old src/, tests/, and configs..."
-          rm -rf "$TARGET_PATH/src"
-          rm -rf "$TARGET_PATH/tests"
-          rm -f "$TARGET_PATH/verify.sh"
-          rm -f "$TARGET_PATH/requirements.txt"
-          rm -f "$TARGET_PATH/requirements.in"
-
+          rm -rf "$TARGET_PATH/*"
+          rm -rf "$TARGET_PATH/.venv"
+ 
           # Copy NEW files to the persistent project root
           echo "🚀 Copying new files..."
           cp -r src "$TARGET_PATH/"
@@ -92,6 +89,8 @@ jobs:
           # 2. Activate
           source .venv/bin/activate
           pip install --upgrade pip pip-tools
+          echo "🧹 Status before cleanup:"
+          ls -l requirements.txt || echo "File not found (Good)"
           
           # 3. Compile/Install
           if [ -f "requirements.in" ]; then

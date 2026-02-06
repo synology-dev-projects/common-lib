@@ -1,12 +1,9 @@
 import logging
 
-import pytest
-
 import pandas as pd
 import unittest
 
-import connectors.oracle as oracle
-
+import src.connectors.oracle as oracle
 
 
 def test_quant_oracle_schema(env_config):
@@ -70,7 +67,7 @@ def test_write_to_oracle_upsert(env_config):
     oracle.insert_into_table(env_config, df1, "ticker_test", "overwrite", ["DATETIME", "SYMBOL"])
     oracle.insert_into_table(env_config, df2, "ticker_test", "upsert", ["DATETIME", "SYMBOL"])
 
-    returned_df = oracle.sql(env_config,"SELECT * FROM ticker_test")
+    returned_df = oracle.sql(env_config, "SELECT * FROM ticker_test")
     oracle.drop_table_if_exists(env_config, "ticker_test")
 
     print(returned_df)

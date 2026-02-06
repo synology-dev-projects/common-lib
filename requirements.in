@@ -1,6 +1,8 @@
-oracledb
+numpy
 pandas
-pydantic
-pydantic_settings
+sqlalchemy
+oracledb
+python-dotenv
 pytest
-SQLAlchemy
+pydantic
+pydantic-settings
