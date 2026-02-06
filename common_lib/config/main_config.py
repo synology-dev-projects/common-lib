@@ -24,6 +24,9 @@ class MainConfig(BaseSettings):
     te_cookie: SecretStr = Field(...)
     target_env_path : str = target_env_path
 
+    # -----------------NFTY -----------------------
+    ntfy_endpoint : str = Field(...)
+
 
     # API Constants (Can be defaults since they rarely change)
     te_base_url: str = "https://tradingedge.club/api/web/v1/spaces/20140900/feed"

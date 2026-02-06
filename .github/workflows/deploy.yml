@@ -116,6 +116,7 @@ jobs:
           echo "ORACLE_HOST_IP=${{ secrets.ORACLE_HOST_IP }}" >> "$ENV_FILE"
           echo "ORACLE_SERVICE=${{ secrets.ORACLE_SERVICE }}" >> "$ENV_FILE"
           echo "TE_COOKIE=${{ secrets.TE_COOKIE }}" >> "$ENV_FILE"
+          echo "NTFY_ENDPOINT=${{ secrets.NTFY_ENDPOINT }}" >> "$ENV_FILE"
           
           chmod 644 "$ENV_FILE"
 
