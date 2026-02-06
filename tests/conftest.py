@@ -1,6 +1,6 @@
 # tests/conftest.py
 import pytest
-import src.config.main_config as config
+import common_lib.config.main_config as config
 
 
 

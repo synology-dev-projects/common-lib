@@ -18,4 +18,8 @@ dependencies = [
 "pydantic",
 "pydantic-settings"
 ]
+
+[tool.setuptools]
+packages = ["common_lib"]
+
 # ^ IMPORTANT: List dependencies here so the Main Project knows what to grab!

@@ -3,7 +3,7 @@ import time
 import pandas as pd
 import sqlalchemy as sa
 from sqlalchemy.exc import NoSuchTableError
-from config.main_config import MainConfig
+from common_lib.config.main_config import MainConfig
 
 
 # --- INTERNAL HELPER: CONNECTION FACTORY ---
