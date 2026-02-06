@@ -6,3 +6,4 @@ python-dotenv
 pytest
 pydantic
 pydantic-settings
+requests
