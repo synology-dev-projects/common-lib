@@ -3,7 +3,7 @@ import logging
 import pandas as pd
 import unittest
 
-import src.connectors.oracle as oracle
+import common_lib.connectors.oracle as oracle
 
 
 def test_quant_oracle_schema(env_config):

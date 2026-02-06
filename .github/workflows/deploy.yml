@@ -61,7 +61,7 @@ jobs:
  
           # Copy NEW files to the persistent project root
           echo "🚀 Copying new files..."
-          cp -r src "$TARGET_PATH/"
+          cp -r common_lib "$TARGET_PATH/"
           cp -r tests "$TARGET_PATH/"
           cp verify.sh "$TARGET_PATH/"
           

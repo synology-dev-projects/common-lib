@@ -1,12 +1,9 @@
-from pydantic import SecretStr, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, SecretStr, model_validator
 from pathlib import Path
-import logging
-import sys
 
 # 1. Calculate the Dynamic Path
-# Start: git-repos/env/project_root/src/connectors/main_config.py -> End: git-repos/conf/.env
+# Start: git-repos/env/project_root/common_lib/connectors/main_config.py -> End: git-repos/conf/.env
 current_file_path = Path(__file__).resolve()
 project_root_path = current_file_path.parent.parent.parent
 target_env_path = str(project_root_path / ".env")
