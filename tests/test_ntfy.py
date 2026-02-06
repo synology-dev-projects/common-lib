@@ -2,7 +2,7 @@
 
 import pytest
 import unittest
-from common_lib.connectors.nfty import NtfyConnector
+import common_lib.connectors.nfty as nfty
 
 
 def test_validate_server_and_topic_with_real_credentials(env_config):
@@ -11,9 +11,8 @@ def test_validate_server_and_topic_with_real_credentials(env_config):
     :return:
     """
 
-    ntfy_conn = NtfyConnector(env_config.ntfy_endpoint)
 
-    result = ntfy_conn._validate_connection("quant_alerts")
+    result = nfty._validate_connection(env_config.ntfy_endpoint,"quant_alerts")
     print(f"\nResponse Status Code: {result.status_code}")
     assert 200 == result.status_code
 
@@ -26,9 +25,7 @@ def test_02_publish_message_success(env_config):
     :return:
     """
 
-    ntfy_conn = NtfyConnector(env_config.ntfy_endpoint)
-
-    result = ntfy_conn.send_ntfy_notification("quant_alerts", "TEST_MESSAGE", "HELLO WORLD", 5)
+    result = nfty.send_ntfy_notification(env_config.ntfy_endpoint,"quant_alerts", "TEST_MESSAGE", "HELLO WORLD", 5)
     print(f"\nResponse Status Code: {result.status_code}")
     assert 200 == result.status_code
 
