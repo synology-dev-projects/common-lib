@@ -89,6 +89,8 @@ jobs:
           # 2. Activate
           source .venv/bin/activate
           pip install --upgrade pip pip-tools
+          echo "🧹 Status before cleanup:"
+          ls -l requirements.txt || echo "File not found (Good)"
           
           # 3. Compile/Install
           if [ -f "requirements.in" ]; then
