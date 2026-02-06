@@ -18,4 +18,4 @@ export PYTHONPATH="$SCRIPT_DIR/src:$PYTHONPATH"
 echo "📂 PYTHONPATH set to: $PYTHONPATH"
 
 # Run pytest using the 'python -m' syntax
-python -m pytest -v tests/
+python -m pytest -v -ra --showlocals tests/
