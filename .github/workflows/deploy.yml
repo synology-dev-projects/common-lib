@@ -64,6 +64,7 @@ jobs:
           cp -r common_lib "$TARGET_PATH/"
           cp -r tests "$TARGET_PATH/"
           cp verify.sh "$TARGET_PATH/"
+          cp pyproject.toml "$TARGET_PATH/"
           
           sudo chown -R 1026:100 "$TARGET_PATH"
           chmod -R 775 "$TARGET_PATH"
