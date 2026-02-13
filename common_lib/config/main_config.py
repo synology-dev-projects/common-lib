@@ -28,6 +28,11 @@ class MainConfig(BaseSettings):
     ntfy_endpoint : str = Field(...)
 
 
+    #------------------IBKR ------------------------
+    ibkr_gateway_ip: str  = Field(...)
+    ibkr_gateway_port: int = Field(...)
+
+
     # API Constants (Can be defaults since they rarely change)
     te_base_url: str = "https://tradingedge.club/api/web/v1/spaces/20140900/feed"
     te_user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36..."

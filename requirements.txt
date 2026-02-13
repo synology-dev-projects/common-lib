@@ -18,21 +18,31 @@ cryptography==46.0.4
     # via oracledb
 exceptiongroup==1.3.1
     # via pytest
+exchange-calendars==4.2.8
+    # via pandas-market-calendars
 greenlet==3.1.1
     # via sqlalchemy
 idna==3.11
     # via requests
 iniconfig==2.1.0
     # via pytest
+korean-lunar-calendar==0.3.1
+    # via exchange-calendars
 numpy==1.24.4
     # via
     #   -r requirements.in
+    #   exchange-calendars
     #   pandas
 oracledb==3.0.0
     # via -r requirements.in
 packaging==26.0
     # via pytest
 pandas==2.0.3
+    # via
+    #   -r requirements.in
+    #   exchange-calendars
+    #   pandas-market-calendars
+pandas-market-calendars==4.0
     # via -r requirements.in
 pluggy==1.5.0
     # via pytest
@@ -46,16 +56,24 @@ pydantic-core==2.27.2
     # via pydantic
 pydantic-settings==2.8.1
     # via -r requirements.in
+pyluach==2.3.0
+    # via exchange-calendars
 pytest==8.3.5
     # via -r requirements.in
 python-dateutil==2.9.0.post0
-    # via pandas
+    # via
+    #   exchange-calendars
+    #   pandas
+    #   pandas-market-calendars
 python-dotenv==1.0.1
     # via
     #   -r requirements.in
     #   pydantic-settings
 pytz==2025.2
-    # via pandas
+    # via
+    #   exchange-calendars
+    #   pandas
+    #   pandas-market-calendars
 requests==2.32.4
     # via -r requirements.in
 six==1.17.0
@@ -64,6 +82,8 @@ sqlalchemy==2.0.46
     # via -r requirements.in
 tomli==2.4.0
     # via pytest
+toolz==1.0.0
+    # via exchange-calendars
 typing-extensions==4.13.2
     # via
     #   annotated-types

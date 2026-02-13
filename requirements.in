@@ -7,3 +7,4 @@ pytest
 pydantic
 pydantic-settings
 requests
+pandas-market-calendars<=4.0
