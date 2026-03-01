@@ -43,7 +43,7 @@ jobs:
           # Read SYNOLOGY_ROOT_PATH from the file we just loaded
           source ../../conf/syno_paths.env
           TARGET_PATH="${SYNOLOGY_ROOT_PATH}/${BRANCH_NAME}/${REPO_NAME}"
-          COMMON_CONFIG_PATH="${SYNOLOGY_ROOT_PATH}/${BRANCH_NAME}/common_config
+          COMMON_CONFIG_PATH="${SYNOLOGY_ROOT_PATH}/${BRANCH_NAME}/common_config"
           mkdir -p "$COMMON_CONFIG_PATH"
           
           echo "📂 Target Path: $TARGET_PATH"
