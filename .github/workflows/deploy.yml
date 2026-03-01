@@ -118,7 +118,7 @@ jobs:
           
           echo "SYNOLOGY_MAIN_IP=${{ secrets.SYNOLOGY_MAIN_IP }}" >> "$ENV_FILE"
           echo "IBKR_GATEWAY_PORT=${{ secrets.IBKR_GATEWAY_PORT }}" >> "$ENV_FILE"
-          echo "ORACLE_USER=${{ secrets.ORACLE_USER }}" > "$ENV_FILE"
+          echo "ORACLE_USER=${{ secrets.ORACLE_USER }}" >> "$ENV_FILE"
           echo "ORACLE_PASS=${{ secrets.ORACLE_PASS }}" >> "$ENV_FILE"
           echo "ORACLE_SERVICE=${{ secrets.ORACLE_SERVICE }}" >> "$ENV_FILE"
           echo "TE_COOKIE=${{ secrets.TE_COOKIE }}" >> "$ENV_FILE"
