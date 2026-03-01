@@ -119,6 +119,7 @@ jobs:
           ORACLE_SERVICE: ${{ secrets.ORACLE_SERVICE }}
           TE_COOKIE: ${{ secrets.TE_COOKIE }}
           NTFY_ENDPOINT: ${{ secrets.NTFY_ENDPOINT }}
+          IBKR_GATEWAY_PORT: ${{ secrets.IBKR_GATEWAY_PORT }}
         run: |
           ENV_FILE="${{ env.CONFIG_DIR }}/.env"
           
@@ -140,9 +141,7 @@ jobs:
             echo "$VAR=${!VAR}" >> "$ENV_FILE"
           done
                 
-          
           chmod 644 "$ENV_FILE"
-          
 
       # 7. VERIFICATION
       - name: Run Verification
