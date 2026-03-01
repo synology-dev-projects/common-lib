@@ -90,7 +90,7 @@ def _define_contract(ib:IB, symbol:str, exchange:str)-> Contract:
 
 def _connect_to_gateway(config: MainConfig) -> IB:
     ib = IB()
-    ib.connect(config.ibkr_gateway_ip, config.ibkr_gateway_port, clientId=1)
+    ib.connect(config.synology_main_ip, config.ibkr_gateway_port, clientId=1)
     return ib
 
 

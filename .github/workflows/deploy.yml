@@ -112,17 +112,32 @@ jobs:
 
       # 6. SECRET INJECTION
       - name: Create Runtime .env File
+        env:
+          SYNOLOGY_MAIN_IP: ${{ secrets.SYNOLOGY_MAIN_IP }}
+          ORACLE_USER: ${{ secrets.ORACLE_USER }}
+          ORACLE_PASS: ${{ secrets.ORACLE_PASS }}
+          ORACLE_SERVICE: ${{ secrets.ORACLE_SERVICE }}
+          TE_COOKIE: ${{ secrets.TE_COOKIE }}
+          NTFY_ENDPOINT: ${{ secrets.NTFY_ENDPOINT }}
         run: |
-          ENV_FILE="${{ env.CONFIG_DIR }}/.env"
-          echo "Generating secure .env file at $ENV_FILE..."
-          
-          echo "ORACLE_USER=${{ secrets.ORACLE_USER }}" > "$ENV_FILE"
-          echo "ORACLE_PASS=${{ secrets.ORACLE_PASS }}" >> "$ENV_FILE"
-          echo "ORACLE_HOST_IP=${{ secrets.ORACLE_HOST_IP }}" >> "$ENV_FILE"
-          echo "ORACLE_SERVICE=${{ secrets.ORACLE_SERVICE }}" >> "$ENV_FILE"
-          echo "TE_COOKIE=${{ secrets.TE_COOKIE }}" >> "$ENV_FILE"
-          echo "NTFY_ENDPOINT=${{ secrets.NTFY_ENDPOINT }}" >> "$ENV_FILE"
-          
+          # 1. Define your exact list of variable names
+          VARIABLES=(
+            "SYNOLOGY_MAIN_IP"
+            "ORACLE_USER"
+            "ORACLE_PASS"
+            "ORACLE_SERVICE"
+            "TE_COOKIE"
+            "NTFY_ENDPOINT"
+          )
+
+          # 2. Initialize/clear the file
+          > "$ENV_FILE"
+      
+          # 3. Loop through the list and write the key-value pairs
+          for VAR in "${VARIABLES[@]}"; do
+            echo "$VAR=${!VAR}" >> "$ENV_FILE"
+          done
+                
           chmod 644 "$ENV_FILE"
           
 

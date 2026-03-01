@@ -20,5 +20,5 @@ def test_load_config_from_env(env_config):
     print(env_config.model_dump_json(indent=2))
     assert env_config.oracle_user != ""
     assert env_config.oracle_pass != ""
-    assert env_config.oracle_host_ip != ""
+    assert env_config.synology_main_ip != ""
     assert env_config.oracle_service != ""

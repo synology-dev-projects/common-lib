@@ -14,7 +14,7 @@ def _get_engine(config: MainConfig) -> sa.Engine:
     """
     Creates a SQLAlchemy engine on demand using config credentials.
     """
-    dsn = f"oracle+oracledb://{config.oracle_user}:{config.oracle_pass.get_secret_value()}@{config.oracle_host_ip}:1521/?service_name={config.oracle_service}"
+    dsn = f"oracle+oracledb://{config.oracle_user}:{config.oracle_pass.get_secret_value()}@{config.synology_main_ip}:1521/?service_name={config.oracle_service}"
     return sa.create_engine(dsn)
 
 
