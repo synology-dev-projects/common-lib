@@ -131,6 +131,7 @@ jobs:
             "ORACLE_SERVICE"
             "TE_COOKIE"
             "NTFY_ENDPOINT"
+            "IBKR_GATEWAY_PORT"
           )
 
           # 2. Initialize/clear the file
