@@ -106,7 +106,25 @@ def test_write_to_oracle_insert_ignore(env_config):
     assert len(returned_df) == 4
     assert (pd.DataFrame.equals(df1, merged_df[merged_df['_merge'] == 'both'].drop('_merge', axis=1)))
 
-# TODO: List of possbile test: datatypes dont change from df to oracle (and vice versa), integrity checks before hand
+
+def test_generate_metadata_catalog(env_config):
+    """
+    Test whether the catalog is generated properly
+    """
+    oracle.generate_metadata_from_oracle(env_config)
+    tables = oracle._get_metadata_catalog(env_config)
+    assert len(tables) > 0
+
+def test_get_table_metadata(env_config):
+    """
+    Test whether the table name can be grabbed
+    """
+    table_name = "quant_lvl_data_te"
+    table_meta = oracle.get_table_metadata(env_config, table_name)
+    assert table_name == table_meta.get("table_name")
+
+
+
 
 if __name__ == '__main__':
     unittest.main()

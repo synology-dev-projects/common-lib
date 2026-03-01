@@ -1,9 +1,12 @@
 import logging
 import time
+from pathlib import Path
+
 import pandas as pd
 import sqlalchemy as sa
 from sqlalchemy.exc import NoSuchTableError
 from common_lib.config.main_config import MainConfig
+import yaml
 
 
 # --- INTERNAL HELPER: CONNECTION FACTORY ---
@@ -11,7 +14,7 @@ def _get_engine(config: MainConfig) -> sa.Engine:
     """
     Creates a SQLAlchemy engine on demand using config credentials.
     """
-    dsn = f"oracle+oracledb://{config.oracle_user}:{config.oracle_pass.get_secret_value()}@{config.oracle_host_ip}:1521/?service_name={config.oracle_service}"
+    dsn = f"oracle+oracledb://{config.oracle_user}:{config.oracle_pass.get_secret_value()}@{config.synology_main_ip}:1521/?service_name={config.oracle_service}"
     return sa.create_engine(dsn)
 
 
@@ -104,9 +107,86 @@ def insert_into_table(config: MainConfig, df: pd.DataFrame, table_name: str, wri
         engine.dispose()
 
 
+def get_table_metadata(m_config: MainConfig, table_name: str) :
+    """
+    Loads the YAML and extracts the metadata for a specific table.
+    """
+    tables = _get_metadata_catalog(m_config)
+    if table_name not in tables:
+        raise KeyError(f"Table '{table_name}' not found in the db catalogue.")
+
+    table_meta = tables[table_name]
+    return table_meta
+
+def generate_metadata_from_oracle(m_config: MainConfig) -> None:
+    """
+    Reads table schemas from Oracle and generates a YAML configuration file.
+    Writes in project root.
+    """
+    # Create an inspector to look at the database metadata
+    engine = _get_engine(m_config)
+    inspector = sa.inspect(engine)
+
+    # 1. Ask Oracle for a list of ALL tables in the default schema
+    table_names = inspector.get_table_names()
+
+    if not table_names:
+        logging.error("ERROR: No tables found in the database.")
+        return
+
+    logging.info(f"Found {len(table_names)} tables. Generating YAML...")
+    schema_config = {"tables": {}}
+
+    for table in table_names:
+        # 1. Verify the table actually exists in Oracle
+        if not inspector.has_table(table):
+            logging.warning(f"Warning: Table '{table}' not found in Oracle. Skipping.")
+            continue
+
+        logging.info(f"Inspecting table: {table}...")
+
+        # 2. Extract Primary Keys
+        pk_constraint = inspector.get_pk_constraint(table)
+        primary_keys = pk_constraint.get('constrained_columns', [])
+
+        # 3. Extract Columns
+        columns_info = inspector.get_columns(table)
+
+        # Build a default 1-to-1 mapping (lowercase key : UPPERCASE ORACLE NAME)
+        # e.g., 'start_lvl_price': 'START_LVL_PRICE'
+        column_mapping = {}
+        for col in columns_info:
+            oracle_col_name = col['name']
+            python_key_name = oracle_col_name.lower()
+            column_mapping[python_key_name] = oracle_col_name
+
+        # 4. Construct the dictionary for this specific table
+        # We use a friendly lowercase name for the YAML key (e.g., 'quant_lvl_data_te')
+        table_key = table.lower()
+        schema_config["tables"][table_key] = {
+            "table_name": table,
+            "primary_keys": primary_keys,
+            "columns": column_mapping
+        }
+
+    # 5. Write the dictionary to a YAML file
+    with open(m_config.db_catalog_file_path, "w") as yaml_file:
+        # default_flow_style=False ensures it writes as a clean block format
+        # sort_keys=False keeps the columns in the order Oracle returned them
+        yaml.dump(schema_config, yaml_file, default_flow_style=False, sort_keys=False)
+
+    logging.info(f"Successfully wrote schema to {m_config.common_config_path}")
+
+
+
+
+
 # ==============================================================================
 # PRIVATE IMPLEMENTATION (These take 'engine' to reuse connections)
 # ==============================================================================
+
+
+
 
 def _drop_table_internal(engine: sa.Engine, table_name: str) -> None:
     """
@@ -211,6 +291,39 @@ def _df_to_oracle_insert_ignore(engine: sa.Engine, df: pd.DataFrame, table_name:
     finally:
         _drop_table_internal(engine, temp_table_name)
 
+def _get_metadata_catalog(m_config: MainConfig) -> {}:
+    """
+    Reads a YAML file and checks if it contains any table definitions.
+    """
+    yaml_file = Path(m_config.db_catalog_file_path)
+
+    # 1. Verify the file actually exists before trying to open it
+    if not yaml_file.exists():
+        raise FileNotFoundError(f"Could not find the file at {yaml_file.resolve}")
+
+    # 2. Read and parse the YAML
+    with open(yaml_file, "r") as file:
+        try:
+            db_catalog_data = yaml.safe_load(file)
+        except yaml.YAMLError as e:
+            error_msg = f"Error: The file is not valid YAML. Details: {e}"
+            logging.error(error_msg)
+            raise FileNotFoundError(error_msg)
+
+    # 4. Check for the 'tables' dictionary and see if it has contents
+    tables = db_catalog_data.get("tables", {})
+
+    if not tables:
+        error_msg = "The YAML file is valid, but no tables were found inside it."
+        raise FileNotFoundError(error_msg)
+
+    # 5. Success!
+    table_count = len(tables)
+    table_names = list(tables.keys())
+    logging.info(f"Found {table_count} table(s): {table_names}")
+
+    return tables
+
 
 # ==============================================================================
 # HELPER FUNCTIONS (Stateless)
@@ -268,6 +381,12 @@ def _lowercase_col_df(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _df_to_sa_types(df: pd.DataFrame, default_string_length: int = 255) -> dict:
+    """
+    takes df and converts the
+    :param df:
+    :param default_string_length:
+    :return:
+    """
     types = {}
     for col_name, dtype in df.dtypes.items():
         if pd.api.types.is_integer_dtype(dtype):
