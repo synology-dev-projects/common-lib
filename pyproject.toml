@@ -9,14 +9,18 @@ description = "My shared library"
 readme = "README.md"
 requires-python = "~=3.8"
 dependencies = [
+"pytest",
 "numpy",
 "pandas",
 "sqlalchemy",
 "oracledb",
 "python-dotenv",
-"pytest",
 "pydantic",
-"pydantic-settings"
+"pydantic-settings",
+"requests",
+"pyyaml",
+"ib_insync",
+"pandas-market-calendars<=4.0"
 ]
 
 [tool.setuptools]
