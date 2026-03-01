@@ -120,6 +120,8 @@ jobs:
           TE_COOKIE: ${{ secrets.TE_COOKIE }}
           NTFY_ENDPOINT: ${{ secrets.NTFY_ENDPOINT }}
         run: |
+          ENV_FILE="${{ env.CONFIG_DIR }}/.env"
+          
           # 1. Define your exact list of variable names
           VARIABLES=(
             "SYNOLOGY_MAIN_IP"
@@ -138,6 +140,7 @@ jobs:
             echo "$VAR=${!VAR}" >> "$ENV_FILE"
           done
                 
+          
           chmod 644 "$ENV_FILE"
           
 
