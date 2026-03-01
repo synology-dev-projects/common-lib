@@ -3,12 +3,7 @@ from pydantic import Field, SecretStr, model_validator
 from pathlib import Path
 
 # 1. Calculate the Dynamic Path
-# Start: git-repos/env/project_root/common_lib/connectors/main_config.py -> End: git-repos/conf/.env
-current_file_path = Path(__file__).resolve()
-project_root_path = current_file_path.parent.parent.parent
-target_env_path = str(project_root_path / ".env")
-
-
+# Start: git-repos/environment_name/project_root/common_lib/connectors/main_config.py -> End: git-repos/environment_name/common_config/.env
 
 class MainConfig(BaseSettings):
     """
@@ -16,13 +11,19 @@ class MainConfig(BaseSettings):
     Reads from environment variables or a .env file.
     """
 
+    # --- FOLDER LOCATIONS ---
+    env_root_path: str = str(Path(__file__).resolve().parent.parent.parent.parent)
+    common_config_path: str = str(Path(env_root_path) / "common_config")
+    env_file_path : str =  str(Path(common_config_path) / ".env")
+    db_catalog_file_path: str = str(Path(common_config_path) / "db_catalog.yaml")
+
+
     # --- ORACLE DATABASE SETTINGS ---
     oracle_user: str = Field(...)
     oracle_pass: SecretStr = Field(...)
     oracle_host_ip: str = Field(...)
     oracle_service: str = Field(...)
     te_cookie: SecretStr = Field(...)
-    target_env_path : str = target_env_path
 
     # -----------------NFTY -----------------------
     ntfy_endpoint : str = Field(...)
@@ -40,9 +41,11 @@ class MainConfig(BaseSettings):
     oracle_quant_table_name: str = "QUANT_LVL_DATA_TE"
     oracle_quant_pks: [str] = ['DATETIME', 'TICKER', 'START_LVL_PRICE']
 
+    oracle_ibkr_ticker_table_name: str = "ticker_data_ibkr"
+
     # Pydantic Config: Tells it to look for a file named .env
     model_config = SettingsConfigDict(
-        env_file=str(target_env_path),
+        env_file=str(env_file_path),
         env_file_encoding="utf-8",
         extra="ignore"  # Ignore extra keys in .env
     )

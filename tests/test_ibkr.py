@@ -22,11 +22,12 @@ def test_define_contract(env_config):
 def test_get_7_days_data(env_config):
     start_date = "2025-07-01"
     end_date = "2025-07-12"
-    df = extract_ibkr_ticker_data(config=env_config,
-                             symbol="SPX",
-                             exchange="CBOE",
-                             startDateStr=start_date,
-                             endDateStr=end_date)
+    h_config = HistoryReqConfig(symbol="SPY"
+                                , exchange="NASDAQ"
+                                , startDateStr=start_date
+                                , endDateStr=end_date)
+
+    df = extract_ibkr_ticker_data(env_config, h_config)
 
 
 

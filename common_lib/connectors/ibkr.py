@@ -4,19 +4,14 @@ from ib_insync import *
 import pandas as pd
 import datetime
 from common_lib.config.main_config import MainConfig
+from common_lib.config.history_req_config import HistoryReqConfig
 from common_lib.utility.market_datetime import get_trading_day_count
 
 
 def extract_ibkr_ticker_data(
         config: MainConfig,
-        symbol:str,
-        exchange: str,
-        startDateStr: str,
-        endDateStr: str,
-        barSizeSetting: str = "1 day",
-        whatToShow: str = "TRADES",
-        useRTH: bool = False,
-        currency:str = 'USD') -> pd.DataFrame:
+        h_config: HistoryReqConfig
+        ) -> pd.DataFrame:
     """
     :param contract:
     :param endDateTime:
@@ -31,11 +26,11 @@ def extract_ibkr_ticker_data(
     ib = _connect_to_gateway(config)
 
     #calculate duration/convert dateStr
-    duration_str = str(get_trading_day_count(startDateStr, endDateStr)) + " D"
-    end_datetime = datetime.datetime.strptime(endDateStr, "%Y-%m-%d") # IBKR expects 'YYYYMMDD HH:mm:ss'
+    duration_str = str(get_trading_day_count(h_config.startDateStr, h_config.endDateStr)) + " D"
+    end_datetime = datetime.datetime.strptime(h_config.endDateStr, "%Y-%m-%d") # IBKR expects 'YYYYMMDD HH:mm:ss'
 
     #define contract
-    contract = _define_contract(ib, symbol, exchange)
+    contract = _define_contract(ib, h_config.symbol, h_config.exchange)
 
     #define error listener
     current_error = {}
@@ -53,9 +48,9 @@ def extract_ibkr_ticker_data(
         contract,
         endDateTime=end_datetime,
         durationStr=duration_str,
-        barSizeSetting=barSizeSetting,
-        whatToShow=whatToShow,
-        useRTH=useRTH
+        barSizeSetting=h_config.barSizeSetting,
+        whatToShow=h_config.whatToShow,
+        useRTH=h_config.useRTH
     )
 
     if not bars:
