@@ -1,6 +1,6 @@
 pytest
-numpy
-pandas
+numpy>=2.1.0
+pandas>=3.0
 sqlalchemy
 oracledb
 python-dotenv
@@ -9,4 +9,4 @@ pydantic-settings
 requests
 pyyaml
 ib_insync
-pandas-market-calendars<=4.0
+pandas-market-calendars
