@@ -10,4 +10,5 @@ pydantic-settings
 requests
 pyyaml
 ib_insync
-pandas-market-calendars
+pandas_market_calendars
+exchange_calendars

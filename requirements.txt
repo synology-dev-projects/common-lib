@@ -19,7 +19,9 @@ cryptography==46.0.4
 eventkit==1.0.3
     # via ib-insync
 exchange-calendars==4.2.8
-    # via pandas-market-calendars
+    # via
+    #   -r requirements.in
+    #   pandas-market-calendars
 greenlet==3.1.1
     # via sqlalchemy
 ib-insync==0.9.86
