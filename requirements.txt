@@ -18,7 +18,7 @@ cryptography==46.0.4
     # via oracledb
 eventkit==1.0.3
     # via ib-insync
-exchange-calendars==4.2.8
+exchange-calendars==4.13.2
     # via
     #   -r requirements.in
     #   pandas-market-calendars
@@ -49,7 +49,7 @@ pandas==3.0.1
     #   -r requirements.in
     #   exchange-calendars
     #   pandas-market-calendars
-pandas-market-calendars==4.0
+pandas-market-calendars==5.3.1.2
     # via -r requirements.in
 pluggy==1.5.0
     # via pytest
@@ -68,18 +68,11 @@ pyluach==2.3.0
 pytest==8.3.5
     # via -r requirements.in
 python-dateutil==2.9.0.post0
-    # via
-    #   exchange-calendars
-    #   pandas
-    #   pandas-market-calendars
+    # via pandas
 python-dotenv==1.0.1
     # via
     #   -r requirements.in
     #   pydantic-settings
-pytz==2025.2
-    # via
-    #   exchange-calendars
-    #   pandas-market-calendars
 pyyaml==6.0.3
     # via -r requirements.in
 requests==2.32.4
@@ -96,7 +89,9 @@ typing-extensions==4.13.2
     #   pydantic-core
     #   sqlalchemy
 tzdata==2025.3
-    # via pandas
+    # via
+    #   exchange-calendars
+    #   pandas
 urllib3==2.2.3
     # via requests
 
