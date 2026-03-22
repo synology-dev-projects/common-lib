@@ -1,6 +1,7 @@
+setuptools<82
 pytest
-numpy>=2.1.0
-pandas>=3.0
+numpy
+pandas
 sqlalchemy
 oracledb
 python-dotenv
