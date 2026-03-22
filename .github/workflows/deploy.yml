@@ -28,7 +28,6 @@ jobs:
           fetch-depth: 0
           # Use your PAT here instead of the default token
           token: ${{ secrets.MY_GITHUB_PAT }}
-          persist-credentials: true #
 
       # 3. SETUP VARIABLES (Calculate Path EARLY)
       - name: Configure Deployment Paths and Common Config
