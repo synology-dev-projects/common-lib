@@ -23,7 +23,7 @@ jobs:
       # 2. CHECKOUT
           # --- SETUP ---
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           # Use your PAT here instead of the default token

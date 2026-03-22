@@ -1,3 +1,4 @@
+setuptools<82
 pytest
 numpy
 pandas
@@ -9,4 +10,5 @@ pydantic-settings
 requests
 pyyaml
 ib_insync
-pandas-market-calendars<=4.0
+pandas_market_calendars>=5.3.0
+exchange_calendars>=4.13
