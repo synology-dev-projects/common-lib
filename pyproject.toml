@@ -7,7 +7,6 @@ name = "common-lib"
 version = "0.1.0"
 description = "My shared library"
 readme = "README.md"
-requires-python = "~=3.8"
 dependencies = [
 "pytest",
 "numpy",
@@ -20,8 +19,8 @@ dependencies = [
 "requests",
 "pyyaml",
 "ib_insync",
-"pandas-market-calendars<=4.0"
-]
+"pandas_market_calendars>=5.3.0",
+"exchange_calendars>=4.13"]
 
 [tool.setuptools]
 packages = ["common_lib"]
