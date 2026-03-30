@@ -87,7 +87,7 @@ jobs:
           # 1. Create .venv only if it doesn't exist (Persists between runs!)
           if [ ! -d ".venv" ]; then
             echo "🔨 Creating new virtual environment in project root..."
-            python3 -m venv .venv
+            python3.13 -m venv .venv
           else
             echo "✅ Existing .venv found. Updating..."
           fi
