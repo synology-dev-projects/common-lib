@@ -12,3 +12,4 @@ pyyaml
 ib_insync
 pandas_market_calendars>=5.3.0
 exchange_calendars>=4.13
+beautifulsoup4

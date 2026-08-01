@@ -94,6 +94,12 @@ tzdata==2025.3
     #   pandas
 urllib3==2.2.3
     # via requests
+beautifulsoup4==4.13.3
+    # via -r requirements.in
+setuptools==80.0.0
+    # via -r requirements.in
+soupsieve==2.6
+    # via beautifulsoup4
 
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools

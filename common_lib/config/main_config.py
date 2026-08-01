@@ -32,6 +32,11 @@ class MainConfig(BaseSettings):
 
     # --- TE CREDENTIALS --- #
     te_cookie: SecretStr = Field(...)
+    te_dex_gex_url: str = "https://tools.tradingedge.club/api/dex/data"
+    te_option_flow_url: str = "https://flow.tradingedge.club"
+    te_login_gate: str = "https://tools.tradingedge.club/gate"
+    te_option_login_gate: str = "https://flow.tradingedge.club/Login.aspx?ReturnUrl=%2fdefault.aspx"
+    te_pass: SecretStr = Field(default=SecretStr("GoWithTheFlow"))
 
     # --- NFTY --- #
     ntfy_endpoint : str = Field(...)
@@ -40,7 +45,7 @@ class MainConfig(BaseSettings):
 
     oracle_quant_table_name: str = "QUANT_LVL_DATA_TE"
     # TODO to remove this must pk automicatally in oracle functions
-    oracle_quant_pks: [str] = ['DATETIME', 'TICKER', 'START_LVL_PRICE']
+    oracle_quant_pks: list[str] = ['DATETIME', 'TICKER', 'START_LVL_PRICE']
 
     oracle_ibkr_ticker_table_name: str = "ticker_data_ibkr"
 
@@ -62,4 +67,4 @@ def load_config() -> MainConfig:
     Factory function to instantiate config.
     Raises Validation Error if .env is missing required fields.
     """
-    return MainConfig()
+    return MainConfig() # pyright: ignore[reportCallIssue]
