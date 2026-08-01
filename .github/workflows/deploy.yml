@@ -31,16 +31,20 @@ jobs:
       # 3. SETUP VARIABLES (Calculate Path EARLY)
       - name: Configure Deployment Paths and Common Config
         run: |
-          # Load Synology Root
+          # Ensure conf directory and syno_paths.env exist
           umask 002
+          mkdir -p ../../conf
+          if [ ! -f ../../conf/syno_paths.env ]; then
+            echo "SYNOLOGY_ROOT_PATH=/volume2/docker" > ../../conf/syno_paths.env
+          fi
+
           cat ../../conf/syno_paths.env >> $GITHUB_ENV
-          
+          source ../../conf/syno_paths.env
+
           # Calculate Variables
           BRANCH_NAME="${{ github.ref_name }}"
           REPO_NAME="${{ github.event.repository.name }}"
           
-          # Read SYNOLOGY_ROOT_PATH from the file we just loaded
-          source ../../conf/syno_paths.env
           TARGET_PATH="${SYNOLOGY_ROOT_PATH}/${BRANCH_NAME}/${REPO_NAME}"
           COMMON_CONFIG_PATH="${SYNOLOGY_ROOT_PATH}/${BRANCH_NAME}/common_config"
           mkdir -p "$COMMON_CONFIG_PATH"
