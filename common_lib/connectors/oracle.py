@@ -57,7 +57,6 @@ def sql(config: MainConfig, sql_query: str) -> pd.DataFrame:
     finally:
         engine.dispose()
 
-    #TODO Normalize column names to lower
     end_time = time.time()
     logging.info(f"Execution time: {end_time - start_time:.4f} seconds")
 

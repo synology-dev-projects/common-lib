@@ -32,6 +32,11 @@ class MainConfig(BaseSettings):
 
     # --- TE CREDENTIALS --- #
     te_cookie: SecretStr = Field(...)
+    te_dex_gex_url : str = Field(...)
+    te_option_flow_url : str = Field(...)
+    te_login_gate : str = Field(...)
+    te_option_login_gate : str = Field(...)
+    te_pass : SecretStr = Field(...)
 
     # --- NFTY --- #
     ntfy_endpoint : str = Field(...)
@@ -40,7 +45,7 @@ class MainConfig(BaseSettings):
 
     oracle_quant_table_name: str = "QUANT_LVL_DATA_TE"
     # TODO to remove this must pk automicatally in oracle functions
-    oracle_quant_pks: [str] = ['DATETIME', 'TICKER', 'START_LVL_PRICE']
+    oracle_quant_pks: list[str] = ['DATETIME', 'TICKER', 'START_LVL_PRICE']
 
     oracle_ibkr_ticker_table_name: str = "ticker_data_ibkr"
 
@@ -62,4 +67,4 @@ def load_config() -> MainConfig:
     Factory function to instantiate config.
     Raises Validation Error if .env is missing required fields.
     """
-    return MainConfig()
+    return MainConfig() # pyright: ignore[reportCallIssue]
