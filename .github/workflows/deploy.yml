@@ -65,7 +65,6 @@ jobs:
           # NOTE: We do NOT delete .venv, allowing it to persist!
           echo "🧹 Wiping old src/, tests/, and configs..."
           rm -rf "$TARGET_PATH"/*
-          rm -rf "$TARGET_PATH/.venv"
  
           # Copy NEW files to the persistent project root
           echo "🚀 Copying new files..."
