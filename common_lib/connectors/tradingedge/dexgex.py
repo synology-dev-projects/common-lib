@@ -168,4 +168,6 @@ def convert_raw_to_df(data: dict | None) -> pd.DataFrame | None:
     logging.debug(f"Clean data: {df}")
 
     df_filtered = df[(df['exp_call_gex'] != 0) | (df['exp_put_gex'] != 0)]
-    return df_filtered
+    if isinstance(df_filtered, pd.DataFrame):
+        return df_filtered
+    return pd.DataFrame(df_filtered)

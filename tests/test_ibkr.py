@@ -2,7 +2,7 @@ import datetime
 from unittest.mock import MagicMock, patch
 import pytest
 import unittest
-from ib_insync import *
+from ib_insync import BarData
 from common_lib.config.history_req_config import HistoryReqConfig
 from common_lib.connectors.ibkr import extract_ibkr_ticker_data, _define_contract
 from common_lib.utility.market_datetime import convert_to_valid_market_date_range
