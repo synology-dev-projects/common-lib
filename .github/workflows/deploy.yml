@@ -104,13 +104,12 @@ jobs:
           
           # 2. Activate
           source .venv/bin/activate
-          pip install --upgrade pip pip-tools
-          echo "🧹 Status before cleanup:"
-          ls -l requirements.txt || echo "File not found (Good)"
+          pip install --upgrade pip
           
-          # 3. Compile/Install
-          if [ -f "requirements.in" ]; then
+          # 3. Compile/Install (Only compile if requirements.txt does not exist)
+          if [ ! -f "requirements.txt" ] && [ -f "requirements.in" ]; then
             echo "🔄 Compiling requirements.in..."
+            pip install --upgrade pip-tools
             pip-compile requirements.in --output-file=requirements.txt
           fi
           
