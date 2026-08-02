@@ -239,6 +239,29 @@ def generate_gexdex_chart(
             return sub_df[col2].fillna(0).values
         return np.zeros(len(strikes_arr))
 
+    # --- Pre-calculate Raw Exposure Magnitudes for Dynamic Scaling ---
+    raw_call_gex_tot = np.zeros(len(strikes))
+    raw_put_gex_tot = np.zeros(len(strikes))
+    raw_call_dex_tot = np.zeros(len(strikes))
+    raw_put_dex_tot = np.zeros(len(strikes))
+
+    for exp in expirations:
+        sub_df = df_copy[df_copy["exp_str"] == exp].set_index("strike").reindex(strikes).fillna(0)
+        raw_call_gex_tot += np.abs(get_series_values(sub_df, "call_gex", "exp_call_gex", strikes))
+        raw_put_gex_tot += np.abs(get_series_values(sub_df, "put_gex", "exp_put_gex", strikes))
+        raw_call_dex_tot += np.abs(get_series_values(sub_df, "call_dex", "exp_call_dex", strikes))
+        raw_put_dex_tot += np.abs(get_series_values(sub_df, "put_dex", "exp_put_dex", strikes))
+
+    max_gex_val = max(raw_call_gex_tot.max(), raw_put_gex_tot.max(), 1.0)
+    max_dex_val = max(raw_call_dex_tot.max(), raw_put_dex_tot.max(), 1.0)
+
+    # Dynamic unit scale determination (Billions >= 1e9, Millions < 1e9)
+    gex_unit_scale = 1e9 if max_gex_val >= 1e9 else 1e6
+    gex_unit_label = "B" if max_gex_val >= 1e9 else "M"
+
+    dex_unit_scale = 1e9 if max_dex_val >= 1e9 else 1e6
+    dex_unit_label = "B" if max_dex_val >= 1e9 else "M"
+
     # Setup Dark Theme Figure Layout
     plt.style.use('dark_background')
     fig = plt.figure(figsize=(15, 9), facecolor='#0f141d')
@@ -247,17 +270,22 @@ def generate_gexdex_chart(
     ax1 = fig.add_subplot(gs[0, 0], facecolor='#151a24')
     ax2 = fig.add_subplot(gs[0, 1], facecolor='#151a24', sharey=ax1)
 
+    # Calculate bar height based on strike spacing
+    strike_diffs = np.diff(strikes)
+    min_diff = strike_diffs.min() if len(strike_diffs) > 0 else 2.5
+    bar_height = min_diff * 0.75
+
     # --- PLOT 1: GEX ---
     bottom_call_gex = np.zeros(len(strikes))
     bottom_put_gex = np.zeros(len(strikes))
 
     for exp, color in zip(expirations, colors):
         sub_df = df_copy[df_copy["exp_str"] == exp].set_index("strike").reindex(strikes).fillna(0)
-        c_gex = np.abs(get_series_values(sub_df, "call_gex", "exp_call_gex", strikes)) / 1e9
-        p_gex = np.abs(get_series_values(sub_df, "put_gex", "exp_put_gex", strikes)) / 1e9
+        c_gex = np.abs(get_series_values(sub_df, "call_gex", "exp_call_gex", strikes)) / gex_unit_scale
+        p_gex = np.abs(get_series_values(sub_df, "put_gex", "exp_put_gex", strikes)) / gex_unit_scale
 
-        ax1.barh(strikes, -c_gex, left=-bottom_call_gex, color=color, height=1.8, edgecolor='none')
-        ax1.barh(strikes, p_gex, left=bottom_put_gex, color=color, height=1.8, edgecolor='none')
+        ax1.barh(strikes, -c_gex, left=-bottom_call_gex, color=color, height=bar_height, edgecolor='none')
+        ax1.barh(strikes, p_gex, left=bottom_put_gex, color=color, height=bar_height, edgecolor='none')
 
         bottom_call_gex += c_gex
         bottom_put_gex += p_gex
@@ -268,20 +296,27 @@ def generate_gexdex_chart(
 
     for exp, color in zip(expirations, colors):
         sub_df = df_copy[df_copy["exp_str"] == exp].set_index("strike").reindex(strikes).fillna(0)
-        c_dex = np.abs(get_series_values(sub_df, "call_dex", "exp_call_dex", strikes)) / 1e8
-        p_dex = np.abs(get_series_values(sub_df, "put_dex", "exp_put_dex", strikes)) / 1e8
+        c_dex = np.abs(get_series_values(sub_df, "call_dex", "exp_call_dex", strikes)) / dex_unit_scale
+        p_dex = np.abs(get_series_values(sub_df, "put_dex", "exp_put_dex", strikes)) / dex_unit_scale
 
-        ax2.barh(strikes, -c_dex, left=-bottom_call_dex, color=color, height=1.8, edgecolor='none')
-        ax2.barh(strikes, p_dex, left=bottom_put_dex, color=color, height=1.8, edgecolor='none')
+        ax2.barh(strikes, -c_dex, left=-bottom_call_dex, color=color, height=bar_height, edgecolor='none')
+        ax2.barh(strikes, p_dex, left=bottom_put_dex, color=color, height=bar_height, edgecolor='none')
 
         bottom_call_dex += c_dex
         bottom_put_dex += p_dex
 
-    max_gex = max(bottom_call_gex.max(), bottom_put_gex.max(), 1.0) * 1.15
-    ax1.set_xlim(-max_gex, max_gex)
+    max_gex_scaled = max(bottom_call_gex.max(), bottom_put_gex.max(), 1.0) * 1.15
+    ax1.set_xlim(-max_gex_scaled, max_gex_scaled)
 
-    max_dex = max(bottom_call_dex.max(), bottom_put_dex.max(), 1.0) * 1.15
-    ax2.set_xlim(-max_dex, max_dex)
+    max_dex_scaled = max(bottom_call_dex.max(), bottom_put_dex.max(), 1.0) * 1.15
+    ax2.set_xlim(-max_dex_scaled, max_dex_scaled)
+
+    # Strike Y-Tick Selection: Clean integer tick spacing every 2 or 5 strikes
+    if len(strikes) > 0:
+        step = max(1, len(strikes) // 20)
+        ytick_positions = strikes[::step]
+    else:
+        ytick_positions = strikes
 
     for ax in (ax1, ax2):
         ax.axhline(spot, color='#3a86ff', linestyle='--', linewidth=1.5, zorder=5)
@@ -289,22 +324,21 @@ def generate_gexdex_chart(
         ax.axhline(p_wall, color='#ff006e', linestyle='--', linewidth=1.5, zorder=5)
         ax.axvline(0, color='#6c757d', linestyle='-', linewidth=1.2, zorder=4)
         ax.grid(True, color='#212836', linestyle=':', linewidth=0.8)
-        if len(strikes) > 0:
-            step = max(1, len(strikes) // 25)
-            ax.set_yticks(strikes[::step])
-        ax.tick_params(colors='#a0aec0', labelsize=8)
+        ax.set_yticks(ytick_positions)
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{int(y)}" if y == int(y) else f"{y:.1f}"))
+        ax.tick_params(colors='#a0aec0', labelsize=9)
 
     def gex_formatter(val_x, pos):
         val = abs(val_x)
         if val == 0:
             return "0"
-        return f"{val:.0f}B"
+        return f"{val:.0f}{gex_unit_label}"
 
     def dex_formatter(val_x, pos):
-        val = abs(val_x) * 100
+        val = abs(val_x)
         if val == 0:
             return "0"
-        return f"{val:.0f}M"
+        return f"{val:.0f}{dex_unit_label}"
 
     ax1.xaxis.set_major_formatter(FuncFormatter(gex_formatter))
     ax2.xaxis.set_major_formatter(FuncFormatter(dex_formatter))
