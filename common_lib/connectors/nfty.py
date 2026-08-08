@@ -1,8 +1,5 @@
 import logging
-import urllib.parse
 import requests
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 def send_ntfy_notification(endpoint:str
@@ -50,28 +47,6 @@ def send_ntfy_notification(endpoint:str
         logging.info(f"Server Response Status: {response.status_code}")
 
     except requests.exceptions.RequestException as e:
-        # Fallback for Synology NAS local loopback if WAN Hairpin NAT fails
-        parsed = urllib.parse.urlparse(endpoint)
-        if parsed.hostname and "synology.me" in parsed.hostname:
-            logging.warning(f"Connection to {endpoint_url} failed ({e}). Attempting Synology local loopback fallback...")
-            try:
-                fallback_headers = headers.copy()
-                fallback_headers['Host'] = parsed.hostname
-                fallback_url = f"https://127.0.0.1/{topic}"
-                response = requests.post(
-                    fallback_url,
-                    data=message.encode('utf-8'),
-                    headers=fallback_headers,
-                    auth=auth,
-                    verify=False,
-                    timeout=timeout
-                )
-                response.raise_for_status()
-                logging.info(f"Notification sent successfully via local loopback fallback to topic: {topic}")
-                return response
-            except requests.exceptions.RequestException as fallback_err:
-                logging.error(f"Fallback connection also failed: {fallback_err}")
-
         logging.error(f"Error sending notification to {endpoint_url}: {e}")
         raise e
 
