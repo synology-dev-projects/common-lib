@@ -315,6 +315,9 @@ def generate_gexdex_chart(
     if len(strikes) > 0:
         step = max(1, len(strikes) // 20)
         ytick_positions = strikes[::step]
+        min_s, max_s = strikes.min(), strikes.max()
+        padding = (max_s - min_s) * 0.04 if max_s > min_s else 2.5
+        ax1.set_ylim(min_s - padding, max_s + padding)
     else:
         ytick_positions = strikes
 
