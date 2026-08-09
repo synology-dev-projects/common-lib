@@ -35,7 +35,7 @@ jobs:
           umask 002
           mkdir -p ../../conf
           if [ ! -f ../../conf/syno_paths.env ]; then
-            echo "SYNOLOGY_ROOT_PATH=/volume2/docker" > ../../conf/syno_paths.env
+            echo "SYNOLOGY_ROOT_PATH=/volume2/homes/rachardv/git-repos" > ../../conf/syno_paths.env
           fi
 
           cat ../../conf/syno_paths.env >> $GITHUB_ENV
