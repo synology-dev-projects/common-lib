@@ -356,7 +356,7 @@ def generate_gexdex_chart(
     ax2.set_xlabel("Delta Exposure (DEX)", color='#cbd5e0', fontsize=11, fontweight='bold', labelpad=10)
     ax1.set_ylabel("Strike Price", color='#cbd5e0', fontsize=11, fontweight='bold')
 
-    fig.suptitle(f"{symbol} Gamma & Delta Exposure by Strike", color='#ffffff', fontsize=16, fontweight='bold', y=0.91)
+    fig.suptitle(f"{symbol} Gamma & Delta Exposure (Live Common-Lib Sync Test!)", color='#ffffff', fontsize=16, fontweight='bold', y=0.91)
 
     fig.text(0.10, 0.94, f"Spot Price\n${spot:.2f}", color='#ffffff', fontsize=12, fontweight='bold', bbox=dict(boxstyle='round,pad=0.5', facecolor='#181e2a', edgecolor='#2d3748'))
     fig.text(0.48, 0.94, f"Call/Put Ratio\n{cp_ratio:.2f}", color='#ff758f', fontsize=12, fontweight='bold', bbox=dict(boxstyle='round,pad=0.5', facecolor='#181e2a', edgecolor='#2d3748'))
