@@ -31,15 +31,8 @@ jobs:
       # 3. SETUP VARIABLES (Calculate Path EARLY)
       - name: Configure Deployment Paths and Common Config
         run: |
-          # Ensure conf directory and syno_paths.env exist
-          umask 002
-          mkdir -p ../../conf
-          if [ ! -f ../../conf/syno_paths.env ]; then
-            echo "SYNOLOGY_ROOT_PATH=/volume2/homes/rachardv/git-repos" > ../../conf/syno_paths.env
-          fi
-
-          cat ../../conf/syno_paths.env >> $GITHUB_ENV
-          source ../../conf/syno_paths.env
+          SYNOLOGY_ROOT_PATH="/volume2/homes/rachardv/git-repos"
+          SYNOLOGY_ROOT_PATH="${SYNOLOGY_ROOT_PATH%/}"
 
           # Calculate Variables
           BRANCH_NAME="${{ github.ref_name }}"
