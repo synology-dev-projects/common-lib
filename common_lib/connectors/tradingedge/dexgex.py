@@ -6,9 +6,8 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import numpy as np
 
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 import matplotlib.patches as mpatches
 from matplotlib.ticker import FuncFormatter
 
@@ -284,9 +283,9 @@ def generate_gexdex_chart(
     dex_unit_scale = 1e9 if max_dex_val >= 1e9 else 1e6
     dex_unit_label = "B" if max_dex_val >= 1e9 else "M"
 
-    # Setup Dark Theme Figure Layout
-    plt.style.use('dark_background')
-    fig = plt.figure(figsize=(15, 9), facecolor='#0f141d')
+    # Setup Dark Theme Figure Layout (Object-Oriented, Lock-Free & Thread-Safe)
+    fig = Figure(figsize=(15, 9), facecolor='#0f141d')
+    canvas = FigureCanvasAgg(fig)
     
     gs = fig.add_gridspec(1, 2, left=0.10, right=0.82, top=0.84, bottom=0.10, wspace=0.18)
     ax1 = fig.add_subplot(gs[0, 0], facecolor='#151a24')
@@ -385,9 +384,11 @@ def generate_gexdex_chart(
 
     legend_patches = [mpatches.Patch(color=c, label=exp) for exp, c in zip(expirations, colors)]
     leg1 = fig.legend(handles=legend_patches, title="Expiries", loc="upper right", bbox_to_anchor=(0.96, 0.85), facecolor='#151a24', edgecolor='#2d3748', fontsize=8, title_fontsize=9)
-    plt.setp(leg1.get_title(), color='#ffffff', fontweight='bold')
-    for text in leg1.get_texts():
-        text.set_color('#cbd5e0')
+    if leg1:
+        leg1.get_title().set_color('#ffffff')
+        leg1.get_title().set_fontweight('bold')
+        for text in leg1.get_texts():
+            text.set_color('#cbd5e0')
 
     summary_text = f"Spot: ${spot:.2f}\nCall Wall: ${c_wall:.2f}\nPut Wall: ${p_wall:.2f}"
     fig.text(0.84, 0.12, summary_text, color='#ffffff', fontsize=9, bbox=dict(boxstyle='square,pad=0.6', facecolor='#151a24', edgecolor='#2d3748'), family='monospace')
@@ -395,10 +396,9 @@ def generate_gexdex_chart(
     buf = io.BytesIO()
     img_fmt = format.lower() if format else 'png'
     try:
-        plt.savefig(buf, format=img_fmt, dpi=130, bbox_inches='tight', facecolor=fig.get_facecolor())
+        canvas.print_figure(buf, format=img_fmt, dpi=130, bbox_inches='tight', facecolor=fig.get_facecolor())
     except Exception:
         buf = io.BytesIO()
-        plt.savefig(buf, format='png', dpi=130, bbox_inches='tight', facecolor=fig.get_facecolor())
-    plt.close(fig)
+        canvas.print_figure(buf, format='png', dpi=130, bbox_inches='tight', facecolor=fig.get_facecolor())
     buf.seek(0)
     return buf.getvalue()
