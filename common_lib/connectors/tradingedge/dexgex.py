@@ -207,7 +207,8 @@ def generate_gexdex_chart(
     spot_price: float | None = None,
     call_wall: float | None = None,
     put_wall: float | None = None,
-    call_put_ratio: float | None = None
+    call_put_ratio: float | None = None,
+    format: str = "png"
 ) -> bytes:
     """
     Generates a high-definition, dark-mode double-sided bi-directional horizontal bar chart
@@ -392,7 +393,12 @@ def generate_gexdex_chart(
     fig.text(0.84, 0.12, summary_text, color='#ffffff', fontsize=9, bbox=dict(boxstyle='square,pad=0.6', facecolor='#151a24', edgecolor='#2d3748'), family='monospace')
 
     buf = io.BytesIO()
-    plt.savefig(buf, format='png', dpi=140, bbox_inches='tight', facecolor=fig.get_facecolor())
+    img_fmt = format.lower() if format else 'png'
+    try:
+        plt.savefig(buf, format=img_fmt, dpi=130, bbox_inches='tight', facecolor=fig.get_facecolor())
+    except Exception:
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=130, bbox_inches='tight', facecolor=fig.get_facecolor())
     plt.close(fig)
     buf.seek(0)
     return buf.getvalue()
