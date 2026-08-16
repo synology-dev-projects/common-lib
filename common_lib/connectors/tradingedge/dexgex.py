@@ -208,7 +208,7 @@ def generate_gexdex_chart(
     call_wall: float | None = None,
     put_wall: float | None = None,
     call_put_ratio: float | None = None,
-    format: str = "webp"
+    format: str = "png"
 ) -> bytes:
     """
     Generates a high-definition, dark-mode double-sided bi-directional horizontal bar chart

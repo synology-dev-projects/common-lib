@@ -92,3 +92,21 @@ def test_generate_gexdex_chart_empty_dataframe_raises_value_error():
     empty_df = pd.DataFrame()
     with pytest.raises(ValueError, match="Cannot generate GEX/DEX chart"):
         generate_gexdex_chart(empty_df)
+
+
+def test_generate_gexdex_chart_webp_format():
+    """
+    Tests generate_gexdex_chart with format='webp' outputs valid WebP binary.
+    """
+    df = pd.DataFrame({
+        'strike': [100, 105, 110],
+        'exp_str': ['2026-08-07', '2026-08-07', '2026-08-07'],
+        'call_gex': [1e8, 2e8, 3e8],
+        'put_gex': [1e8, 2e8, 3e8],
+        'call_dex': [1e7, 2e7, 3e7],
+        'put_dex': [1e7, 2e7, 3e7]
+    })
+    img_bytes = generate_gexdex_chart(df, ticker="AAPL", format="webp")
+    assert isinstance(img_bytes, bytes)
+    assert len(img_bytes) > 500
+    assert img_bytes.startswith(b'RIFF') and b'WEBP' in img_bytes[:16]
