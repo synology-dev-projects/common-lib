@@ -5,6 +5,18 @@ from pathlib import Path
 # 1. Calculate the Dynamic Path
 # Start: git-repos/environment_name/project_root/common_lib/connectors/main_config.py -> End: git-repos/environment_name/common_config/.env
 
+def _get_env_file_path() -> str:
+    pkg_dir = Path(__file__).resolve().parent.parent
+    candidates = [
+        pkg_dir.parent.parent / "common_config" / ".env",
+        pkg_dir.parent / "common_config" / ".env",
+        Path("/app/common_config/.env")
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return str(candidates[0])
+
 class MainConfig(BaseSettings):
     """
     Central configuration loader.
@@ -12,10 +24,11 @@ class MainConfig(BaseSettings):
     """
 
     # --- FOLDER LOCATIONS ---
-    env_root_path: str = str(Path(__file__).resolve().parent.parent.parent.parent)
-    common_config_path: str = str(Path(env_root_path) / "common_config")
-    env_file_path : str =  str(Path(common_config_path) / ".env")
+    env_file_path: str = _get_env_file_path()
+    common_config_path: str = str(Path(env_file_path).parent)
+    env_root_path: str = str(Path(common_config_path).parent)
     db_catalog_file_path: str = str(Path(common_config_path) / "db_catalog.yaml")
+
 
     # --- MAIN IP GATEWAY --- #
     synology_main_ip: str = Field(...)
@@ -32,6 +45,11 @@ class MainConfig(BaseSettings):
 
     # --- TE CREDENTIALS --- #
     te_cookie: SecretStr = Field(...)
+    te_dex_gex_url: str = "https://tools.tradingedge.club/api/dex/data"
+    te_option_flow_url: str = "https://flow.tradingedge.club"
+    te_login_gate: str = "https://tools.tradingedge.club/gate"
+    te_option_login_gate: str = "https://flow.tradingedge.club/Login.aspx?ReturnUrl=%2fdefault.aspx"
+    te_pass: SecretStr = Field(default=SecretStr("GoWithTheFlow"))
 
     # --- NFTY --- #
     ntfy_endpoint : str = Field(...)
@@ -40,7 +58,7 @@ class MainConfig(BaseSettings):
 
     oracle_quant_table_name: str = "QUANT_LVL_DATA_TE"
     # TODO to remove this must pk automicatally in oracle functions
-    oracle_quant_pks: [str] = ['DATETIME', 'TICKER', 'START_LVL_PRICE']
+    oracle_quant_pks: list[str] = ['DATETIME', 'TICKER', 'START_LVL_PRICE']
 
     oracle_ibkr_ticker_table_name: str = "ticker_data_ibkr"
 
@@ -62,4 +80,4 @@ def load_config() -> MainConfig:
     Factory function to instantiate config.
     Raises Validation Error if .env is missing required fields.
     """
-    return MainConfig()
+    return MainConfig() # pyright: ignore[reportCallIssue]

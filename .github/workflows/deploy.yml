@@ -26,22 +26,18 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # Use your PAT here instead of the default token
-          token: ${{ secrets.MY_GITHUB_PAT }}
+          token: ${{ secrets.PAT_TOKEN }}
 
       # 3. SETUP VARIABLES (Calculate Path EARLY)
       - name: Configure Deployment Paths and Common Config
         run: |
-          # Load Synology Root
-          umask 002
-          cat ../../conf/syno_paths.env >> $GITHUB_ENV
-          
+          SYNOLOGY_ROOT_PATH="/volume2/homes/rachardv/git-repos"
+          SYNOLOGY_ROOT_PATH="${SYNOLOGY_ROOT_PATH%/}"
+
           # Calculate Variables
           BRANCH_NAME="${{ github.ref_name }}"
           REPO_NAME="${{ github.event.repository.name }}"
           
-          # Read SYNOLOGY_ROOT_PATH from the file we just loaded
-          source ../../conf/syno_paths.env
           TARGET_PATH="${SYNOLOGY_ROOT_PATH}/${BRANCH_NAME}/${REPO_NAME}"
           COMMON_CONFIG_PATH="${SYNOLOGY_ROOT_PATH}/${BRANCH_NAME}/common_config"
           mkdir -p "$COMMON_CONFIG_PATH"
@@ -62,7 +58,6 @@ jobs:
           # NOTE: We do NOT delete .venv, allowing it to persist!
           echo "🧹 Wiping old src/, tests/, and configs..."
           rm -rf "$TARGET_PATH"/*
-          rm -rf "$TARGET_PATH/.venv"
  
           # Copy NEW files to the persistent project root
           echo "🚀 Copying new files..."
@@ -79,28 +74,34 @@ jobs:
           [ -f requirements.txt ] && cp requirements.txt "$TARGET_PATH/"
           [ -f requirements.in ] && cp requirements.in "$TARGET_PATH/"
 
+      # 4.5 SETUP PYTHON
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
       # 5. MANAGE VENV (Run execution INSIDE Project Root)
       - name: Update Project Virtualenv
         run: |
           cd "${{ env.DEPLOY_DIR }}"
           
-          # 1. Create .venv only if it doesn't exist (Persists between runs!)
-          if [ ! -d ".venv" ]; then
-            echo "🔨 Creating new virtual environment in project root..."
-            python3.13 -m venv .venv
+          # 1. Create .venv if missing or if Python version < 3.12
+          if [ ! -d ".venv" ] || ! .venv/bin/python -c "import sys; exit(0 if sys.version_info >= (3, 12) else 1)" 2>/dev/null; then
+            echo "🔨 Creating new Python 3.13 virtual environment in project root..."
+            rm -rf .venv
+            python3 -m venv .venv
           else
             echo "✅ Existing .venv found. Updating..."
           fi
           
           # 2. Activate
           source .venv/bin/activate
-          pip install --upgrade pip pip-tools
-          echo "🧹 Status before cleanup:"
-          ls -l requirements.txt || echo "File not found (Good)"
+          pip install --upgrade pip
           
-          # 3. Compile/Install
-          if [ -f "requirements.in" ]; then
+          # 3. Compile/Install (Only compile if requirements.txt does not exist)
+          if [ ! -f "requirements.txt" ] && [ -f "requirements.in" ]; then
             echo "🔄 Compiling requirements.in..."
+            pip install --upgrade pip-tools
             pip-compile requirements.in --output-file=requirements.txt
           fi
           
@@ -148,5 +149,5 @@ jobs:
           git fetch origin develop
           git checkout master
           git pull origin master
-          git merge origin/develop --no-ff -m "Auto-merge develop to master [Skip CI]"
+          git merge origin/develop --no-ff -m "Auto-merge develop to master"
           git push origin master

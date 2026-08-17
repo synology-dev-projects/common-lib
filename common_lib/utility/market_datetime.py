@@ -1,7 +1,8 @@
 import pandas_market_calendars as mcal
-import datetime
+from datetime import datetime, date
+import pandas as pd
 
-def convert_to_valid_market_date_range(start_date: str, end_date: str) -> (str, str):
+def convert_to_valid_market_date_range(start_date: str, end_date: str) -> tuple[str, str]:
     """
     Checks start and end dates of a date range
      and adjust its forward or back if they are not on a valid market day (includng holidays)
@@ -12,13 +13,13 @@ def convert_to_valid_market_date_range(start_date: str, end_date: str) -> (str, 
 
     #get list of valid market days
     nyse = mcal.get_calendar('NYSE')
-    valid_days= nyse.valid_days(start_date=start_date, end_date=end_date)
+    valid_days = nyse.valid_days(start_date=start_date, end_date=end_date)
 
-    start_date_valid = valid_days.min().strftime('%Y-%m-%d')
-    end_date_valid = valid_days.max().strftime('%Y-%m-%d')
+    start_date_valid = str(valid_days[0])[:10]
+    end_date_valid = str(valid_days[-1])[:10]
     return start_date_valid, end_date_valid
 
-def convert_to_valid_market_days(start_date: datetime, end_date: datetime) -> int:
+def convert_to_valid_market_days(start_date: datetime | date | str, end_date: datetime | date | str) -> int:
     """
     Checks start and end dates of a date range
      and adjust its forward or back if they are not on a valid market day (includng holidays)

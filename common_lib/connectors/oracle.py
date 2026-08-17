@@ -1,6 +1,7 @@
 import logging
 import time
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import sqlalchemy as sa
@@ -57,7 +58,6 @@ def sql(config: MainConfig, sql_query: str) -> pd.DataFrame:
     finally:
         engine.dispose()
 
-    #TODO Normalize column names to lower
     end_time = time.time()
     logging.info(f"Execution time: {end_time - start_time:.4f} seconds")
 
@@ -78,7 +78,7 @@ def drop_table_if_exists(config: MainConfig, table_name: str) -> None:
 
 
 def insert_into_table(config: MainConfig, df: pd.DataFrame, table_name: str, write_mode: str,
-                      primary_keys: [str]) -> None:
+                      primary_keys: list[str]) -> None:
     """
     Main interface to insert df into oracle.
     :param df:
@@ -211,7 +211,7 @@ def _drop_table_internal(engine: sa.Engine, table_name: str) -> None:
         logging.error(f"Error dropping table {table_name}: {e}")
 
 
-def _df_to_oracle_overwrite(engine: sa.Engine, df: pd.DataFrame, table_name: str, primary_keys: [str]) -> int:
+def _df_to_oracle_overwrite(engine: sa.Engine, df: pd.DataFrame, table_name: str, primary_keys: list[str]) -> int:
     """
     Writes table to oracle / Will overwrite if there's anything of the same name.
     """
@@ -245,7 +245,7 @@ def _df_to_oracle_overwrite(engine: sa.Engine, df: pd.DataFrame, table_name: str
     return len(df.index)
 
 
-def _df_to_oracle_upsert(engine: sa.Engine, df: pd.DataFrame, table_name: str, primary_keys: [str]) -> None:
+def _df_to_oracle_upsert(engine: sa.Engine, df: pd.DataFrame, table_name: str, primary_keys: list[str]) -> None:
     """
     Inserts and updates any records based off pk.
     """
@@ -269,7 +269,7 @@ def _df_to_oracle_upsert(engine: sa.Engine, df: pd.DataFrame, table_name: str, p
         _drop_table_internal(engine, temp_table_name)
 
 
-def _df_to_oracle_insert_ignore(engine: sa.Engine, df: pd.DataFrame, table_name: str, primary_keys: [str]) -> None:
+def _df_to_oracle_insert_ignore(engine: sa.Engine, df: pd.DataFrame, table_name: str, primary_keys: list[str]) -> None:
     """
     Will not insert any records that violate primary_id constraints.
     """
@@ -293,7 +293,7 @@ def _df_to_oracle_insert_ignore(engine: sa.Engine, df: pd.DataFrame, table_name:
     finally:
         _drop_table_internal(engine, temp_table_name)
 
-def _get_metadata_catalog(m_config: MainConfig) -> {}:
+def _get_metadata_catalog(m_config: MainConfig) -> dict[str, Any]:
     """
     Reads a YAML file and checks if it contains any table definitions.
     """

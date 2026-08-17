@@ -1,6 +1,6 @@
 import logging
 
-from ib_insync import *
+from ib_insync import IB, Contract, util
 import pandas as pd
 import datetime
 from common_lib.config.main_config import MainConfig
@@ -60,6 +60,8 @@ def extract_ibkr_ticker_data(
     df = util.df(bars)
 
     ib.disconnect()
+    if df is None:
+        return pd.DataFrame()
     return df
 
 
