@@ -119,19 +119,23 @@ def extract_raw_data(
             }
             response = requests.get(dex_gex_url, headers=headers, timeout=12.0)
 
-        if response.status_code == 200:
-            try:
-                raw_data = response.json()
-                if isinstance(raw_data, dict) and ("ticker" in raw_data or "spot_price" in raw_data or "spotPrice" in raw_data):
-                    logging.info(f"Success: 200 retrieved live data for {ticker}")
-                    return raw_data
-            except Exception:
-                pass  # Fall through to automatic session recovery
+        if response is not None:
+            if response.status_code == 200:
+                try:
+                    raw_data = response.json()
+                    if isinstance(raw_data, dict) and ("ticker" in raw_data or "spot_price" in raw_data or "spotPrice" in raw_data):
+                        logging.info(f"Success: 200 retrieved live data for {ticker}")
+                        return raw_data
+                except Exception:
+                    pass  # JSON parse error, could be HTML redirect
+            elif response.status_code in (400, 404):
+                logging.warning(f"TradingEdge returned HTTP {response.status_code} for ticker {ticker}. Ticker may be invalid or delisted.")
+                return None
     except Exception as req_err:
         logging.warning(f"Initial request to TradingEdge failed for {ticker}: {req_err}")
 
-    # Session recovery: Automatically re-authenticate and retry once
-    logging.warning(f"TradingEdge session expired or returned invalid payload for {ticker}. Triggering automatic re-authentication...")
+    # Session recovery: Automatically re-authenticate only if session might be expired
+    logging.warning(f"TradingEdge session expired or returned auth error for {ticker}. Triggering automatic re-authentication...")
     fresh_session = get_authenticated_session(config, force_refresh=True)
     if fresh_session:
         try:
