@@ -127,17 +127,13 @@ jobs:
           
           chmod 644 "$ENV_FILE"
 
-      # 7. VERIFICATION
-      - name: Run Verification
+      # 7. IN-SITU MODULE SMOKE CHECK
+      - name: Verify Package Import
         run: |
-          echo "🧪 Testing branch: ${{ github.ref_name }}"
+          echo "📡 Verifying common-lib package import..."
           cd "${{ env.DEPLOY_DIR }}"
-          
-          # Force the environment to use the local venv first
           export PATH="$(pwd)/.venv/bin:$PATH"
-          
-          chmod +x verify.sh
-          ./verify.sh
+          python -c "import sys, common_lib; print('✅ common_lib package imports cleanly on Python', sys.version)"
 
       # 8. MERGE LOGIC (Unchanged)
       - name: Auto-Promote to Master

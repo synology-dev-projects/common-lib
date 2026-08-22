@@ -36,13 +36,9 @@ def test_quant_oracle_schema(env_config):
     assert pd.api.types.is_string_dtype(df["TICKER"]), "TICKER column is not string/object type"
     assert pd.api.types.is_float_dtype(df["START_LVL_PRICE"]), "START_LVL_PRICE is not float"
     assert pd.api.types.is_float_dtype(df["END_LVL_PRICE"]), "END_LVL_PRICE is not float"
-    # Strings are often stored as 'object' or 'string' in pandas
-    assert pd.api.types.is_string_dtype(df["COMMENTS"]) or pd.api.types.is_string_dtype(
-        df["TICKER"]), "TICKER is not string/object"
-    assert pd.api.types.is_string_dtype(df["BUY_SELL_IND"]) or pd.api.types.is_string_dtype(
-        df["TICKER"]), "TICKER is not string/object"
-    assert pd.api.types.is_string_dtype(df["WEB_LINK"]) or pd.api.types.is_string_dtype(
-        df["TICKER"]), "TICKER is not string/object"
+    assert pd.api.types.is_string_dtype(df["COMMENTS"]) or pd.api.types.is_object_dtype(df["COMMENTS"]), "COMMENTS is not string/object"
+    assert pd.api.types.is_string_dtype(df["BUY_SELL_IND"]) or pd.api.types.is_object_dtype(df["BUY_SELL_IND"]), "BUY_SELL_IND is not string/object"
+    assert pd.api.types.is_string_dtype(df["WEB_LINK"]) or pd.api.types.is_object_dtype(df["WEB_LINK"]), "WEB_LINK is not string/object"
 
 
 
