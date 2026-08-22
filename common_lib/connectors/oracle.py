@@ -1,5 +1,7 @@
 import logging
 import time
+import uuid
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -10,13 +12,32 @@ from common_lib.config.main_config import MainConfig
 import yaml
 
 
-# --- INTERNAL HELPER: CONNECTION FACTORY ---
+# --- INTERNAL HELPER: CONNECTION FACTORY & POOLING ---
+@lru_cache(maxsize=8)
+def _get_engine_cached(oracle_user: str, oracle_pass_secret: str, host: str, service: str, port: int = 1521) -> sa.Engine:
+    """
+    Creates and caches a pooled SQLAlchemy engine.
+    """
+    dsn = f"oracle+oracledb://{oracle_user}:{oracle_pass_secret}@{host}:{port}/?service_name={service}"
+    return sa.create_engine(
+        dsn,
+        pool_size=5,
+        max_overflow=10,
+        pool_recycle=1800,
+        pool_pre_ping=True
+    )
+
+
 def _get_engine(config: MainConfig) -> sa.Engine:
     """
-    Creates a SQLAlchemy engine on demand using config credentials.
+    Retrieves the cached SQLAlchemy engine pool for the given configuration.
     """
-    dsn = f"oracle+oracledb://{config.oracle_user}:{config.oracle_pass.get_secret_value()}@{config.synology_main_ip}:1521/?service_name={config.oracle_service}"
-    return sa.create_engine(dsn)
+    return _get_engine_cached(
+        config.oracle_user,
+        config.oracle_pass.get_secret_value(),
+        config.synology_main_ip,
+        config.oracle_service
+    )
 
 
 # ==============================================================================
@@ -31,12 +52,9 @@ def execute(config: MainConfig, sql_statement: str) -> None:
     start_time = time.time()
 
     engine = _get_engine(config)
-    try:
-        # engine.begin() automatically starts a transaction and commits at the end
-        with engine.begin() as conn:
-            conn.execute(sa.text(sql_statement))
-    finally:
-        engine.dispose()
+    # engine.begin() automatically starts a transaction and commits at the end
+    with engine.begin() as conn:
+        conn.execute(sa.text(sql_statement))
 
     end_time = time.time()
     logging.info(f"Query time: {end_time - start_time:.4f} seconds")
@@ -50,31 +68,26 @@ def sql(config: MainConfig, sql_query: str) -> pd.DataFrame:
     start_time = time.time()
 
     engine = _get_engine(config)
-    try:
-        # read_sql_query manages connection open/close automatically with an engine
-        df = pd.read_sql_query(sql_query, engine, parse_dates={"DATETIME": '%Y-%m-%d'})
-        df.columns = df.columns.str.upper()
-        return df
-    finally:
-        engine.dispose()
+    # read_sql_query manages connection open/close automatically with a pooled engine
+    df = pd.read_sql_query(sql_query, engine, parse_dates={"DATETIME": '%Y-%m-%d'})
+    df.columns = df.columns.str.upper()
 
     end_time = time.time()
     logging.info(f"Execution time: {end_time - start_time:.4f} seconds")
+    return df
 
 
 
 def drop_table_if_exists(config: MainConfig, table_name: str) -> None:
     """
-    Public wrapper to drop a table using a fresh connection.
+    Public wrapper to drop a table using a connection from the pool.
     """
     start_time = time.time()
 
     table_name = table_name.upper()
     engine = _get_engine(config)
-    try:
-        _drop_table_internal(engine, table_name)
-    finally:
-        engine.dispose()
+    _drop_table_internal(engine, table_name)
+
 
 
 def insert_into_table(config: MainConfig, df: pd.DataFrame, table_name: str, write_mode: str,
@@ -91,22 +104,17 @@ def insert_into_table(config: MainConfig, df: pd.DataFrame, table_name: str, wri
     table_name = table_name.upper()
     engine = _get_engine(config)
 
+    if write_mode == 'ignore':
+        _df_to_oracle_insert_ignore(engine, df, table_name, primary_keys)
+    elif write_mode == 'upsert':
+        _df_to_oracle_upsert(engine, df, table_name, primary_keys)
+    elif write_mode == 'overwrite':
+        _df_to_oracle_overwrite(engine, df, table_name, primary_keys)
+    else:
+        raise ValueError("Invalid write mode. Use: ignore, upsert, or overwrite")
 
-    try:
-        if write_mode == 'ignore':
-            _df_to_oracle_insert_ignore(engine, df, table_name, primary_keys)
-        elif write_mode == 'upsert':
-            _df_to_oracle_upsert(engine, df, table_name, primary_keys)
-        elif write_mode == 'overwrite':
-            _df_to_oracle_overwrite(engine, df, table_name, primary_keys)
-        else:
-            raise ValueError("Invalid write mode. Use: ignore, upsert, or overwrite")
-
-        end_time = time.time()
-        logging.info(f"Execution time for {table_name}: {end_time - start_time:.4f} seconds")
-
-    finally:
-        engine.dispose()
+    end_time = time.time()
+    logging.info(f"Execution time for {table_name}: {end_time - start_time:.4f} seconds")
 
 
 def get_table_metadata(m_config: MainConfig, table_name: str) :
@@ -249,13 +257,14 @@ def _df_to_oracle_upsert(engine: sa.Engine, df: pd.DataFrame, table_name: str, p
     """
     Inserts and updates any records based off pk.
     """
-    temp_table_name = "TEMP_" + table_name[:20]  # Shorten to ensure valid Oracle ID
+    unique_suffix = uuid.uuid4().hex[:8].upper()
+    temp_table_name = f"TMP_{table_name[:12]}_{unique_suffix}"
 
     # 1. Write to Temp Table
     _df_to_oracle_overwrite(engine, df, temp_table_name, primary_keys)
     # 2. Create Merge SQL
     merge_sql = _create_merge_statement(engine, temp_table_name, table_name, "upsert")
-    logging.info(f"Executing MERGE (Upsert)")
+    logging.info(f"Executing MERGE (Upsert) via staging table {temp_table_name}")
 
     # 3. Execute Merge
     try:
@@ -273,14 +282,15 @@ def _df_to_oracle_insert_ignore(engine: sa.Engine, df: pd.DataFrame, table_name:
     """
     Will not insert any records that violate primary_id constraints.
     """
-    temp_table_name = "TEMP_" + table_name[:20]
+    unique_suffix = uuid.uuid4().hex[:8].upper()
+    temp_table_name = f"TMP_{table_name[:12]}_{unique_suffix}"
 
     # 1. Write to Temp Table
     _df_to_oracle_overwrite(engine, df, temp_table_name, primary_keys)
 
     # 2. Create Merge SQL
     merge_sql = _create_merge_statement(engine, temp_table_name, table_name, "ignore")
-    logging.info(f"Executing MERGE (Ignore Duplicates)")
+    logging.info(f"Executing MERGE (Ignore Duplicates) via staging table {temp_table_name}")
 
     # 3. Execute Merge
     try:
@@ -301,7 +311,7 @@ def _get_metadata_catalog(m_config: MainConfig) -> dict[str, Any]:
 
     # 1. Verify the file actually exists before trying to open it
     if not yaml_file.exists():
-        raise FileNotFoundError(f"Could not find the file at {yaml_file.resolve}")
+        raise FileNotFoundError(f"Could not find the file at {yaml_file.resolve()}")
 
     # 2. Read and parse the YAML
     with open(yaml_file, "r") as file:
