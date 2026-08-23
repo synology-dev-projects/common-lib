@@ -120,6 +120,25 @@ def test_get_table_metadata(env_config):
     assert table_name == table_meta.get("table_name")
 
 
+def test_get_unusual_flow_batching(env_config):
+    """
+    Test get_unusual_flow supports single ticker, comma-separated tickers, and lists
+    """
+    # 1. Empty/None input
+    assert oracle.get_unusual_flow(env_config, symbols=[]).empty
+    assert oracle.get_unusual_flow(env_config, symbols="").empty
+
+    # 2. Query with single symbol string
+    df_single = oracle.get_unusual_flow(env_config, symbols="SPY", lookback_days=30)
+    assert isinstance(df_single, pd.DataFrame)
+
+    # 3. Query with comma-separated symbols
+    df_csv = oracle.get_unusual_flow(env_config, symbols="SPY, QQQ", lookback_days=30)
+    assert isinstance(df_csv, pd.DataFrame)
+
+    # 4. Query with list of symbols
+    df_list = oracle.get_unusual_flow(env_config, symbols=["SPY", "NVDA", "AAPL"], lookback_days=30)
+    assert isinstance(df_list, pd.DataFrame)
 
 
 if __name__ == '__main__':

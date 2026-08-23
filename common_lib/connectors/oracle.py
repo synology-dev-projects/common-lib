@@ -3,7 +3,7 @@ import time
 import uuid
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Union, List, Optional
 
 import pandas as pd
 import sqlalchemy as sa
@@ -119,26 +119,62 @@ def insert_into_table(config: MainConfig, df: pd.DataFrame, table_name: str, wri
 
 def get_unusual_flow(
     config: MainConfig,
-    symbol: str,
+    symbols: Optional[Union[str, List[str]]] = None,
     lookback_days: int = 30,
     min_premium: float = 0.0,
-    limit: int = 50
+    symbol: Optional[Union[str, List[str]]] = None,
+    limit: Optional[int] = None
 ) -> pd.DataFrame:
     """
-    Queries UNUSUAL_OPTION_FLOW_TE for records matching SYMBOL = :symbol and
+    Queries UNUSUAL_OPTION_FLOW_TE for records matching SYMBOL IN (...) and
     TRADE_DATE >= CURRENT_DATE - :lookback_days ordered by TRADE_DATE DESC, PREMIUM DESC.
+    Accepts a single symbol string, comma-separated symbols string, or list of symbols.
+    Executes multi-ticker batch queries in a single flight.
     Safe fallback if table does not exist or has zero rows.
     """
     table_name = getattr(config, "oracle_unusual_flow_table_name", "UNUSUAL_OPTION_FLOW_TE")
-    clean_symbol = str(symbol).strip().upper().replace("$", "")
-    if not clean_symbol:
+    raw_symbols = symbols if symbols is not None else symbol
+    if raw_symbols is None:
         return pd.DataFrame()
+
+    if isinstance(raw_symbols, str):
+        raw_list = raw_symbols.split(",")
+    elif isinstance(raw_symbols, (list, tuple, set)):
+        raw_list = list(raw_symbols)
+    else:
+        raw_list = [str(raw_symbols)]
+
+    # Clean and deduplicate symbols while preserving order
+    seen = set()
+    list_of_symbols = []
+    for s in raw_list:
+        clean_s = str(s).strip().upper().replace("$", "")
+        if clean_s and clean_s not in seen:
+            seen.add(clean_s)
+            list_of_symbols.append(clean_s)
+
+    if not list_of_symbols:
+        return pd.DataFrame()
+
+    params: dict[str, Any] = {
+        "lookback_days": int(lookback_days),
+        "min_premium": float(min_premium),
+    }
+
+    if len(list_of_symbols) == 1:
+        where_symbol_clause = "WHERE SYMBOL = :symbol"
+        params["symbol"] = list_of_symbols[0]
+    else:
+        bind_placeholders = ", ".join([f":sym_{i}" for i in range(len(list_of_symbols))])
+        where_symbol_clause = f"WHERE SYMBOL IN ({bind_placeholders})"
+        for i, s in enumerate(list_of_symbols):
+            params[f"sym_{i}"] = s
 
     query = f"""
         SELECT FLOW_ID, TRADE_DATE, SYMBOL, ORDER_TYPE, STRIKE_PRICE, STRIKE_OTM_PCT,
                EXPIRATION_DATE, OPEN_INTEREST, IS_UNUSUAL_OI, PREMIUM, NET_SCORE, CREATED_AT
         FROM {table_name}
-        WHERE SYMBOL = :symbol
+        {where_symbol_clause}
           AND TRADE_DATE >= CURRENT_DATE - :lookback_days
           AND PREMIUM >= :min_premium
         ORDER BY TRADE_DATE DESC, PREMIUM DESC
@@ -148,18 +184,14 @@ def get_unusual_flow(
         df = pd.read_sql_query(
             sa.text(query),
             engine,
-            params={
-                "symbol": clean_symbol,
-                "lookback_days": int(lookback_days),
-                "min_premium": float(min_premium),
-            }
+            params=params
         )
         df.columns = df.columns.str.upper()
         if limit is not None and limit > 0:
             df = df.head(limit)
         return df
     except Exception as ex:
-        logging.warning(f"Error querying unusual flow from {table_name} for symbol {clean_symbol}: {ex}")
+        logging.warning(f"Error querying unusual flow from {table_name} for symbols {list_of_symbols}: {ex}")
         return pd.DataFrame()
 
 
