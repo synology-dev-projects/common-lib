@@ -61,6 +61,8 @@ class MainConfig(BaseSettings):
     oracle_quant_pks: list[str] = ['DATETIME', 'TICKER', 'START_LVL_PRICE']
 
     oracle_ibkr_ticker_table_name: str = "ticker_data_ibkr"
+    oracle_unusual_flow_table_name: str = "UNUSUAL_OPTION_FLOW_TE"
+    oracle_unusual_flow_pks: list[str] = ['FLOW_ID']
 
 
     # --- #API Constants (Can be defaults since they rarely change) --- #
