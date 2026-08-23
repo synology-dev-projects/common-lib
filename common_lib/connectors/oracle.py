@@ -117,6 +117,52 @@ def insert_into_table(config: MainConfig, df: pd.DataFrame, table_name: str, wri
     logging.info(f"Execution time for {table_name}: {end_time - start_time:.4f} seconds")
 
 
+def get_unusual_flow(
+    config: MainConfig,
+    symbol: str,
+    lookback_days: int = 30,
+    min_premium: float = 0.0,
+    limit: int = 50
+) -> pd.DataFrame:
+    """
+    Queries UNUSUAL_OPTION_FLOW_TE for records matching SYMBOL = :symbol and
+    TRADE_DATE >= CURRENT_DATE - :lookback_days ordered by TRADE_DATE DESC, PREMIUM DESC.
+    Safe fallback if table does not exist or has zero rows.
+    """
+    table_name = getattr(config, "oracle_unusual_flow_table_name", "UNUSUAL_OPTION_FLOW_TE")
+    clean_symbol = str(symbol).strip().upper().replace("$", "")
+    if not clean_symbol:
+        return pd.DataFrame()
+
+    query = f"""
+        SELECT FLOW_ID, TRADE_DATE, SYMBOL, ORDER_TYPE, STRIKE_PRICE, STRIKE_OTM_PCT,
+               EXPIRATION_DATE, OPEN_INTEREST, IS_UNUSUAL_OI, PREMIUM, NET_SCORE, CREATED_AT
+        FROM {table_name}
+        WHERE SYMBOL = :symbol
+          AND TRADE_DATE >= CURRENT_DATE - :lookback_days
+          AND PREMIUM >= :min_premium
+        ORDER BY TRADE_DATE DESC, PREMIUM DESC
+    """
+    try:
+        engine = _get_engine(config)
+        df = pd.read_sql_query(
+            sa.text(query),
+            engine,
+            params={
+                "symbol": clean_symbol,
+                "lookback_days": int(lookback_days),
+                "min_premium": float(min_premium),
+            }
+        )
+        df.columns = df.columns.str.upper()
+        if limit is not None and limit > 0:
+            df = df.head(limit)
+        return df
+    except Exception as ex:
+        logging.warning(f"Error querying unusual flow from {table_name} for symbol {clean_symbol}: {ex}")
+        return pd.DataFrame()
+
+
 def get_table_metadata(m_config: MainConfig, table_name: str) :
     """
     Loads the YAML and extracts the metadata for a specific table.
