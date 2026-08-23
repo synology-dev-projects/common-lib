@@ -2,12 +2,19 @@ import datetime
 from unittest.mock import MagicMock, patch
 import pytest
 import unittest
-from ib_insync import BarData
-from common_lib.config.history_req_config import HistoryReqConfig
-from common_lib.connectors.ibkr import extract_ibkr_ticker_data, _define_contract
-from common_lib.utility.market_datetime import convert_to_valid_market_date_range
+try:
+    from ib_insync import BarData
+    from common_lib.connectors.ibkr import extract_ibkr_ticker_data, _define_contract, HistoryReqConfig
+    from common_lib.utility.market_datetime import convert_to_valid_market_date_range
+except ImportError:
+    BarData = None
+    extract_ibkr_ticker_data = None
+    _define_contract = None
+    HistoryReqConfig = None
+    convert_to_valid_market_date_range = None
 
 
+@pytest.mark.skipif(BarData is None, reason="ib_insync not installed")
 def test_define_contract(env_config):
     """
     Test define contract with mocked IB gateway
@@ -32,6 +39,7 @@ def test_define_contract(env_config):
     assert contract_stock.secType == "STK"
 
 
+@pytest.mark.skipif(BarData is None, reason="ib_insync not installed")
 @patch("common_lib.connectors.ibkr._connect_to_gateway")
 def test_get_7_days_data(mock_connect, env_config):
     """
