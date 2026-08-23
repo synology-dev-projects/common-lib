@@ -36,6 +36,18 @@ class MainConfig(BaseSettings):
     # --- CONNECTOR PORTS --- #
     ibkr_gateway_port: int = Field(...)
 
+    # --- DB SELECTION --- #
+    db_type: str = Field(default="postgres", alias="DB_TYPE")
+
+    # --- POSTGRES CREDENTIALS --- #
+    postgres_host: str = Field(default="localhost", alias="POSTGRES_HOST")
+    postgres_port: int = Field(default=5432, alias="POSTGRES_PORT")
+    postgres_db: str = Field(default="quant_db", alias="POSTGRES_DB")
+    postgres_user: str = Field(default="quant_admin", alias="POSTGRES_USER")
+    postgres_pass: SecretStr = Field(default=SecretStr("quant_secure_pass"), alias="POSTGRES_PASSWORD")
+    postgres_quant_table_name: str = "quant_lvl_data_te"
+    postgres_unusual_flow_table_name: str = "unusual_option_flow_te"
+
     # --- ORACLE CREDENTIALS  --- #
     oracle_user: str = Field(...)
     oracle_pass: SecretStr = Field(...)
