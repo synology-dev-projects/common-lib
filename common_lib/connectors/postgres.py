@@ -263,7 +263,7 @@ def get_unusual_flow(
         if range_start_obj > range_end_obj:
             range_start_obj, range_end_obj = range_end_obj, range_start_obj
     elif raw_date_str:
-        range_match = re.split(r"\s+(?:to|-|through)\s+|[:\.]{2,}", raw_date_str, flags=re.IGNORECASE)
+        range_match = re.split(r"\s+(?:to|-|through)\s+|[:\.]{2,}|(?<=\d):(?=\d)", raw_date_str, flags=re.IGNORECASE)
         if len(range_match) == 2 and range_match[0] and range_match[1]:
             try:
                 range_start_obj = pd.to_datetime(range_match[0].strip()).date()
@@ -275,7 +275,17 @@ def get_unusual_flow(
                 is_range = False
 
         if not is_range:
+            WEEKDAY_MAP = {
+                "monday": 0, "mon": 0,
+                "tuesday": 1, "tue": 1, "tues": 1,
+                "wednesday": 2, "wed": 2,
+                "thursday": 3, "thu": 3, "thur": 3, "thurs": 3,
+                "friday": 4, "fri": 4,
+                "saturday": 5, "sat": 5,
+                "sunday": 6, "sun": 6,
+            }
             td_clean = raw_date_str.lower()
+            clean_weekday = re.sub(r"^(last|this)\s+", "", td_clean).strip()
             if td_clean == "latest":
                 target_date_obj = None  # Will resolve to MAX(trade_date)
             elif td_clean in ("yesterday", "prev", "previous"):
@@ -288,10 +298,11 @@ def get_unusual_flow(
                     target_date_obj = today_dt - dt_timedelta(days=1)
             elif td_clean == "today":
                 target_date_obj = dt_date.today()
-            elif td_clean in ("friday", "last friday", "this friday"):
+            elif clean_weekday in WEEKDAY_MAP:
                 today_dt = dt_date.today()
-                offset = (today_dt.weekday() - 4) % 7
-                if offset == 0:
+                target_weekday = WEEKDAY_MAP[clean_weekday]
+                offset = (today_dt.weekday() - target_weekday) % 7
+                if offset == 0 and "this" not in td_clean:
                     offset = 7
                 target_date_obj = today_dt - dt_timedelta(days=offset)
             else:

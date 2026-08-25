@@ -341,3 +341,91 @@ def test_get_unusual_flow_date_range(sample_config):
         assert "LIMIT" not in query_arg  # 100% complete data query
         assert len(res) == 2
 
+
+def test_get_unusual_flow_colon_range_and_args(sample_config):
+    """Verifies FLOW-07 colon-separated range ('2026-08-17:2026-08-21') and start_date/end_date arguments."""
+    mock_engine = MagicMock(spec=sa.Engine)
+    mock_df = pd.DataFrame([
+        {"flow_id": "r1", "symbol": "NVDA", "premium": 25000000.0, "trade_date": "2026-08-21"}
+    ])
+
+    with patch("common_lib.connectors.postgres._get_postgres_engine", return_value=mock_engine), \
+         patch("pandas.read_sql_query", return_value=mock_df) as mock_read_sql:
+
+        # Test colon range '2026-08-17:2026-08-21'
+        res1 = pg_conn.get_unusual_flow(
+            config=sample_config,
+            date_input="2026-08-17:2026-08-21"
+        )
+        assert mock_read_sql.call_count == 1
+        params1 = mock_read_sql.call_args[1]["params"]
+        assert params1["start_date"] == "2026-08-17"
+        assert params1["end_date"] == "2026-08-21"
+
+        # Test explicit start_date and end_date arguments
+        mock_read_sql.reset_mock()
+        res2 = pg_conn.get_unusual_flow(
+            config=sample_config,
+            start_date="2026-08-17",
+            end_date="2026-08-21"
+        )
+        assert mock_read_sql.call_count == 1
+        params2 = mock_read_sql.call_args[1]["params"]
+        assert params2["start_date"] == "2026-08-17"
+        assert params2["end_date"] == "2026-08-21"
+
+
+def test_get_unusual_flow_today_and_weekdays(sample_config):
+    """Verifies FLOW-07 handling of 'today', 'Friday', and other weekday keywords."""
+    mock_engine = MagicMock(spec=sa.Engine)
+    mock_df = pd.DataFrame([{"flow_id": "f1", "symbol": "SPY", "premium": 500000.0}])
+
+    with patch("common_lib.connectors.postgres._get_postgres_engine", return_value=mock_engine), \
+         patch("pandas.read_sql_query", return_value=mock_df) as mock_read_sql:
+
+        # 'today'
+        pg_conn.get_unusual_flow(sample_config, date_input="today")
+        assert mock_read_sql.call_count == 1
+        params_today = mock_read_sql.call_args[1]["params"]
+        assert params_today["target_date"] == date.today().strftime("%Y-%m-%d")
+
+        # 'Friday'
+        mock_read_sql.reset_mock()
+        pg_conn.get_unusual_flow(sample_config, date_input="Friday")
+        assert mock_read_sql.call_count == 1
+        params_fri = mock_read_sql.call_args[1]["params"]
+        assert "target_date" in params_fri
+
+
+def test_get_unusual_flow_default_none_queries_max_date(sample_config):
+    """Verifies that calling get_unusual_flow with no date/symbols queries MAX(trade_date) and retrieves all rows."""
+    mock_engine = MagicMock(spec=sa.Engine)
+    mock_conn = MagicMock()
+    mock_engine.connect.return_value.__enter__.return_value = mock_conn
+    mock_conn.execute.return_value.scalar.return_value = "2026-08-21"
+
+    mock_df = pd.DataFrame([
+        {"flow_id": "d1", "symbol": "AMD", "premium": 15500000.0, "trade_date": "2026-08-21"},
+        {"flow_id": "d2", "symbol": "NVDA", "premium": 25000000.0, "trade_date": "2026-08-21"}
+    ])
+
+    with patch("common_lib.connectors.postgres._get_postgres_engine", return_value=mock_engine), \
+         patch("pandas.read_sql_query", return_value=mock_df) as mock_read_sql:
+
+        res = pg_conn.get_unusual_flow(config=sample_config)
+
+        # Check MAX(trade_date) was queried
+        assert mock_conn.execute.call_count == 1
+        assert "SELECT MAX(trade_date)" in str(mock_conn.execute.call_args[0][0])
+
+        # Check read_sql_query used target_date and returned all rows without LIMIT
+        assert mock_read_sql.call_count == 1
+        query_arg = str(mock_read_sql.call_args[0][0])
+        params_arg = mock_read_sql.call_args[1]["params"]
+        assert "WHERE trade_date = :target_date" in query_arg
+        assert params_arg["target_date"] == "2026-08-21"
+        assert "ORDER BY trade_date DESC, premium DESC" in query_arg
+        assert "LIMIT" not in query_arg
+        assert len(res) == 2
+
+
