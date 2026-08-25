@@ -311,3 +311,33 @@ def test_get_unusual_flow_trade_date_latest_and_yesterday(sample_config):
         assert mock_read_sql.call_count == 1
         yesterday_params = mock_read_sql.call_args[1]["params"]
         assert "target_date" in yesterday_params
+
+
+def test_get_unusual_flow_date_range(sample_config):
+    """Verifies FLOW-07 date range queries (e.g. '2026-08-17 to 2026-08-21')."""
+    mock_engine = MagicMock(spec=sa.Engine)
+    mock_df = pd.DataFrame([
+        {"flow_id": "r1", "symbol": "NVDA", "premium": 25000000.0, "trade_date": "2026-08-21"},
+        {"flow_id": "r2", "symbol": "TSLA", "premium": 15000000.0, "trade_date": "2026-08-18"}
+    ])
+
+    with patch("common_lib.connectors.postgres._get_postgres_engine", return_value=mock_engine), \
+         patch("pandas.read_sql_query", return_value=mock_df) as mock_read_sql:
+
+        res = pg_conn.get_unusual_flow(
+            config=sample_config,
+            date="2026-08-17 to 2026-08-21",
+            min_premium=1000000.0
+        )
+
+        assert mock_read_sql.call_count == 1
+        query_arg = str(mock_read_sql.call_args[0][0])
+        params_arg = mock_read_sql.call_args[1]["params"]
+
+        assert "trade_date BETWEEN :start_date AND :end_date" in query_arg
+        assert params_arg["start_date"] == "2026-08-17"
+        assert params_arg["end_date"] == "2026-08-21"
+        assert params_arg["min_premium"] == 1000000.0
+        assert "LIMIT" not in query_arg  # 100% complete data query
+        assert len(res) == 2
+
