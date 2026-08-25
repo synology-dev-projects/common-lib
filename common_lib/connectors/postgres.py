@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 from functools import lru_cache
 from datetime import date, datetime, timedelta
@@ -207,82 +208,36 @@ def insert_into_table(
 
 def get_unusual_flow(
     config: MainConfig,
+    date_input: Optional[Union[str, date]] = None,
+    date: Optional[Union[str, date]] = None,
+    trade_date: Optional[Union[str, date]] = None,
+    start_date: Optional[Union[str, date]] = None,
+    end_date: Optional[Union[str, date]] = None,
     symbols: Optional[Union[str, List[str]]] = None,
-    trade_date: Optional[Union[date, str]] = None,
+    symbol: Optional[str] = None,
     lookback_days: int = 30,
     min_premium: float = 0.0,
-    limit: Optional[int] = 100,
-    symbol: Optional[Union[str, List[str]]] = None
+    limit: Optional[int] = None,
 ) -> pd.DataFrame:
+    """Queries unusual options flow prints from PostgreSQL table (unusual_option_flow_te).
+    
+    Supports:
+    - Single trade date: e.g. '2026-08-21', 'Friday', 'yesterday', 'today', 'latest'.
+    - Date ranges: e.g. '2026-08-17 to 2026-08-21' or start_date/end_date arguments.
+    - Default (no date provided & no symbols): automatically defaults to the latest recorded trading day in DB.
+    - Historical lookback (symbols provided without date): queries trade_date >= cutoff_date.
+    - Completeness: 100% of ALL entries for the requested session or range when limit is omitted.
     """
-    Queries unusual_option_flow_te for records matching symbol IN (...) or single-day market flow.
-    - If trade_date is provided:
-        - 'latest': dynamically queries SELECT MAX(trade_date) FROM unusual_option_flow_te.
-        - 'yesterday': calculates closest prior weekday.
-        - 'today' or string date: parsed with pd.to_datetime.
-      Filters on trade_date = :target_date AND premium >= :min_premium ORDER BY premium DESC.
-      If symbols is None or 'MARKET' / 'ALL', queries market-wide flow.
-    - If trade_date is None: queries symbol(s) with trade_date >= CURRENT_DATE - INTERVAL :lookback_days.
-    Safe fallback if table does not exist or has zero rows. Returns uppercase column names.
-    """
-    from datetime import timedelta
+    from datetime import date as dt_date, timedelta as dt_timedelta
     table_name = getattr(config, "postgres_unusual_flow_table_name", "unusual_option_flow_te").lower()
 
-    # 1. Parse trade_date if specified
-    target_date_obj: Optional[date] = None
-    if trade_date is not None and str(trade_date).strip() != "":
-        if isinstance(trade_date, datetime):
-            target_date_obj = trade_date.date()
-        elif isinstance(trade_date, date):
-            target_date_obj = trade_date
-        elif isinstance(trade_date, str):
-            td_clean = trade_date.strip().lower()
-            if td_clean == "latest":
-                try:
-                    engine = _get_postgres_engine(config)
-                    with engine.connect() as conn:
-                        max_res = conn.execute(sa.text(f"SELECT MAX(trade_date) FROM {table_name}")).scalar()
-                    if max_res is None:
-                        return pd.DataFrame()
-                    target_date_obj = pd.to_datetime(max_res).date()
-                except Exception as ex:
-                    logger.warning(f"Error querying MAX(trade_date) from {table_name}: {ex}")
-                    return pd.DataFrame()
-            elif td_clean in ("yesterday", "prev", "previous"):
-                today = date.today()
-                if today.weekday() == 0:  # Monday -> Friday
-                    target_date_obj = today - timedelta(days=3)
-                elif today.weekday() == 6:  # Sunday -> Friday
-                    target_date_obj = today - timedelta(days=2)
-                else:
-                    target_date_obj = today - timedelta(days=1)
-            elif td_clean == "today":
-                target_date_obj = date.today()
-            elif td_clean in ("friday", "last friday", "this friday"):
-                today = date.today()
-                # Most recent Friday
-                offset = (today.weekday() - 4) % 7
-                if offset == 0:
-                    offset = 7
-                target_date_obj = today - timedelta(days=offset)
-            else:
-                try:
-                    target_date_obj = pd.to_datetime(trade_date).date()
-                except Exception:
-                    # Fallback to latest session in DB
-                    try:
-                        engine = _get_postgres_engine(config)
-                        with engine.connect() as conn:
-                            max_res = conn.execute(sa.text(f"SELECT MAX(trade_date) FROM {table_name}")).scalar()
-                        if max_res:
-                            target_date_obj = pd.to_datetime(max_res).date()
-                        else:
-                            return pd.DataFrame()
-                    except Exception as ex:
-                        logger.warning(f"Invalid trade_date string '{trade_date}': {ex}")
-                        return pd.DataFrame()
+    raw_date_str = str(date_input or date or trade_date or "").strip()
+    is_range = False
+    range_start_obj: Optional[dt_date] = None
+    range_end_obj: Optional[dt_date] = None
+    target_date_obj: Optional[dt_date] = None
 
-    # 2. Clean and deduplicate symbols
+    # 1. Clean and deduplicate symbols if provided
     raw_symbols = symbols if symbols is not None else symbol
     list_of_symbols = []
     if raw_symbols is not None:
@@ -296,93 +251,125 @@ def get_unusual_flow(
         seen = set()
         for s in raw_list:
             clean_s = str(s).strip().upper().replace("$", "")
-            if clean_s and clean_s not in seen:
+            if clean_s and clean_s not in seen and clean_s not in ("MARKET", "ALL"):
                 seen.add(clean_s)
                 list_of_symbols.append(clean_s)
 
-    # 3. Formulate query based on trade_date vs lookback
-    limit_clause = f"LIMIT {int(limit)}" if (limit is not None and limit > 0) else ""
+    # 2. Check for explicit start_date / end_date arguments or date range strings
+    if start_date is not None and end_date is not None:
+        is_range = True
+        range_start_obj = pd.to_datetime(start_date).date()
+        range_end_obj = pd.to_datetime(end_date).date()
+        if range_start_obj > range_end_obj:
+            range_start_obj, range_end_obj = range_end_obj, range_start_obj
+    elif raw_date_str:
+        range_match = re.split(r"\s+(?:to|-|through)\s+|[:\.]{2,}", raw_date_str, flags=re.IGNORECASE)
+        if len(range_match) == 2 and range_match[0] and range_match[1]:
+            try:
+                range_start_obj = pd.to_datetime(range_match[0].strip()).date()
+                range_end_obj = pd.to_datetime(range_match[1].strip()).date()
+                if range_start_obj > range_end_obj:
+                    range_start_obj, range_end_obj = range_end_obj, range_start_obj
+                is_range = True
+            except Exception:
+                is_range = False
 
-    if target_date_obj is not None:
-        target_date_str = target_date_obj.strftime("%Y-%m-%d")
-        params: dict[str, Any] = {
-            "target_date": target_date_str,
-            "min_premium": float(min_premium),
-        }
-        is_market_query = (not list_of_symbols) or (list_of_symbols in (["MARKET"], ["ALL"]))
-
-        if limit is not None:
-            limit_clause = "LIMIT :limit"
-            params["limit"] = int(limit)
-        else:
-            limit_clause = ""
-
-        if is_market_query:
-            query = f"""
-                SELECT flow_id, trade_date, symbol, order_type, strike_price, strike_otm_pct,
-                       expiration_date, open_interest, is_unusual_oi, premium, net_score, created_at
-                FROM {table_name}
-                WHERE trade_date = :target_date
-                  AND premium >= :min_premium
-                ORDER BY premium DESC
-                {limit_clause}
-            """
-        else:
-            if len(list_of_symbols) == 1:
-                where_symbol_clause = "WHERE symbol = :symbol"
-                params["symbol"] = list_of_symbols[0]
+        if not is_range:
+            td_clean = raw_date_str.lower()
+            if td_clean == "latest":
+                target_date_obj = None  # Will resolve to MAX(trade_date)
+            elif td_clean in ("yesterday", "prev", "previous"):
+                today_dt = dt_date.today()
+                if today_dt.weekday() == 0:  # Monday -> Friday
+                    target_date_obj = today_dt - dt_timedelta(days=3)
+                elif today_dt.weekday() == 6:  # Sunday -> Friday
+                    target_date_obj = today_dt - dt_timedelta(days=2)
+                else:
+                    target_date_obj = today_dt - dt_timedelta(days=1)
+            elif td_clean == "today":
+                target_date_obj = dt_date.today()
+            elif td_clean in ("friday", "last friday", "this friday"):
+                today_dt = dt_date.today()
+                offset = (today_dt.weekday() - 4) % 7
+                if offset == 0:
+                    offset = 7
+                target_date_obj = today_dt - dt_timedelta(days=offset)
             else:
-                bind_placeholders = ", ".join([f":sym_{i}" for i in range(len(list_of_symbols))])
-                where_symbol_clause = f"WHERE symbol IN ({bind_placeholders})"
-                for i, s in enumerate(list_of_symbols):
-                    params[f"sym_{i}"] = s
+                try:
+                    target_date_obj = pd.to_datetime(raw_date_str).date()
+                except Exception:
+                    target_date_obj = None
 
-            query = f"""
-                SELECT flow_id, trade_date, symbol, order_type, strike_price, strike_otm_pct,
-                       expiration_date, open_interest, is_unusual_oi, premium, net_score, created_at
-                FROM {table_name}
-                {where_symbol_clause}
-                  AND trade_date = :target_date
-                  AND premium >= :min_premium
-                ORDER BY premium DESC
-                {limit_clause}
-            """
-    else:
-        # Lookback-based query requires symbols
-        if not list_of_symbols:
-            return pd.DataFrame()
+    # 3. Check if this is a historical lookback query for specific tickers (no trade_date specified)
+    is_lookback_mode = bool(list_of_symbols and not raw_date_str and start_date is None and end_date is None)
 
-        cutoff_date = (date.today() - timedelta(days=int(lookback_days))).strftime("%Y-%m-%d")
-        params = {
-            "cutoff_date": cutoff_date,
-            "min_premium": float(min_premium),
-        }
+    params: dict[str, Any] = {"min_premium": float(min_premium)}
+    where_clauses = []
 
-        if limit is not None:
-            limit_clause = "LIMIT :limit"
-            params["limit"] = int(limit)
-        else:
-            limit_clause = ""
-
-        if list_of_symbols in (["MARKET"], ["ALL"]):
-            where_clause = "WHERE trade_date >= :cutoff_date AND premium >= :min_premium"
-        elif len(list_of_symbols) == 1:
-            where_clause = "WHERE symbol = :symbol AND trade_date >= :cutoff_date AND premium >= :min_premium"
+    if is_lookback_mode:
+        cutoff_date = (dt_date.today() - dt_timedelta(days=int(lookback_days))).strftime("%Y-%m-%d")
+        params["cutoff_date"] = cutoff_date
+        if len(list_of_symbols) == 1:
+            where_clauses.append("symbol = :symbol")
             params["symbol"] = list_of_symbols[0]
         else:
             bind_placeholders = ", ".join([f":sym_{i}" for i in range(len(list_of_symbols))])
-            where_clause = f"WHERE symbol IN ({bind_placeholders}) AND trade_date >= :cutoff_date AND premium >= :min_premium"
+            where_clauses.append(f"symbol IN ({bind_placeholders})")
             for i, s in enumerate(list_of_symbols):
                 params[f"sym_{i}"] = s
+        where_clauses.append("trade_date >= :cutoff_date")
+        where_clauses.append("premium >= :min_premium")
+    else:
+        # Date / Range / Latest Session Mode
+        if not is_range and target_date_obj is None:
+            try:
+                engine = _get_postgres_engine(config)
+                with engine.connect() as conn:
+                    max_res = conn.execute(sa.text(f"SELECT MAX(trade_date) FROM {table_name}")).scalar()
+                if max_res:
+                    target_date_obj = pd.to_datetime(max_res).date()
+                else:
+                    return pd.DataFrame()
+            except Exception as ex:
+                logger.warning(f"Error querying MAX(trade_date) from {table_name}: {ex}")
+                return pd.DataFrame()
 
-        query = f"""
-            SELECT flow_id, trade_date, symbol, order_type, strike_price, strike_otm_pct,
-                   expiration_date, open_interest, is_unusual_oi, premium, net_score, created_at
-            FROM {table_name}
-            {where_clause}
-            ORDER BY trade_date DESC, premium DESC
-            {limit_clause}
-        """
+        if list_of_symbols:
+            if len(list_of_symbols) == 1:
+                where_clauses.append("symbol = :symbol")
+                params["symbol"] = list_of_symbols[0]
+            else:
+                bind_placeholders = ", ".join([f":sym_{i}" for i in range(len(list_of_symbols))])
+                where_clauses.append(f"symbol IN ({bind_placeholders})")
+                for i, s in enumerate(list_of_symbols):
+                    params[f"sym_{i}"] = s
+
+        if is_range and range_start_obj and range_end_obj:
+            where_clauses.append("trade_date BETWEEN :start_date AND :end_date")
+            params["start_date"] = range_start_obj.strftime("%Y-%m-%d")
+            params["end_date"] = range_end_obj.strftime("%Y-%m-%d")
+        elif target_date_obj is not None:
+            where_clauses.append("trade_date = :target_date")
+            params["target_date"] = target_date_obj.strftime("%Y-%m-%d")
+
+        where_clauses.append("premium >= :min_premium")
+
+    if not where_clauses:
+        return pd.DataFrame()
+
+    where_sql = "WHERE " + " AND ".join(where_clauses)
+    limit_clause = "LIMIT :limit" if (limit is not None and int(limit) > 0) else ""
+    if limit is not None and int(limit) > 0:
+        params["limit"] = int(limit)
+
+    query = f"""
+        SELECT flow_id, trade_date, symbol, order_type, strike_price, strike_otm_pct,
+               expiration_date, open_interest, is_unusual_oi, premium, net_score, created_at
+        FROM {table_name}
+        {where_sql}
+        ORDER BY trade_date DESC, premium DESC
+        {limit_clause}
+    """
 
     try:
         engine = _get_postgres_engine(config)
