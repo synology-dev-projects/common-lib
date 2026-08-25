@@ -25,11 +25,12 @@ def _get_postgres_engine_cached(
     """
     Creates and caches a pooled PostgreSQL SQLAlchemy engine using psycopg.
     """
+    resolved_host = "127.0.0.1" if host == "localhost" else host
     url = sa.engine.URL.create(
         drivername="postgresql+psycopg",
         username=user,
         password=password_secret,
-        host=host,
+        host=resolved_host,
         port=port,
         database=db
     )
@@ -38,8 +39,11 @@ def _get_postgres_engine_cached(
         pool_size=5,
         max_overflow=10,
         pool_recycle=1800,
-        pool_pre_ping=True
+        pool_pre_ping=True,
+        connect_args={"connect_timeout": 2}
     )
+
+
 
 
 def _get_postgres_engine(config: MainConfig) -> sa.Engine:
@@ -240,8 +244,10 @@ def get_unusual_flow(
     if not list_of_symbols:
         return pd.DataFrame()
 
+    from datetime import timedelta
+    cutoff_date = (date.today() - timedelta(days=int(lookback_days))).strftime("%Y-%m-%d")
     params: dict[str, Any] = {
-        "lookback_days": int(lookback_days),
+        "cutoff_date": cutoff_date,
         "min_premium": float(min_premium),
     }
 
@@ -259,7 +265,7 @@ def get_unusual_flow(
                expiration_date, open_interest, is_unusual_oi, premium, net_score, created_at
         FROM {table_name}
         {where_symbol_clause}
-          AND trade_date >= CURRENT_DATE - INTERVAL '1 day' * :lookback_days
+          AND trade_date::text >= :cutoff_date
           AND premium >= :min_premium
         ORDER BY trade_date DESC, premium DESC
     """
