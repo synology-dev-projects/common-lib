@@ -248,7 +248,7 @@ def get_unusual_flow(
                 except Exception as ex:
                     logger.warning(f"Error querying MAX(trade_date) from {table_name}: {ex}")
                     return pd.DataFrame()
-            elif td_clean == "yesterday":
+            elif td_clean in ("yesterday", "prev", "previous"):
                 today = date.today()
                 if today.weekday() == 0:  # Monday -> Friday
                     target_date_obj = today - timedelta(days=3)
@@ -258,12 +258,29 @@ def get_unusual_flow(
                     target_date_obj = today - timedelta(days=1)
             elif td_clean == "today":
                 target_date_obj = date.today()
+            elif td_clean in ("friday", "last friday", "this friday"):
+                today = date.today()
+                # Most recent Friday
+                offset = (today.weekday() - 4) % 7
+                if offset == 0:
+                    offset = 7
+                target_date_obj = today - timedelta(days=offset)
             else:
                 try:
                     target_date_obj = pd.to_datetime(trade_date).date()
-                except Exception as ex:
-                    logger.warning(f"Invalid trade_date string '{trade_date}': {ex}")
-                    return pd.DataFrame()
+                except Exception:
+                    # Fallback to latest session in DB
+                    try:
+                        engine = _get_postgres_engine(config)
+                        with engine.connect() as conn:
+                            max_res = conn.execute(sa.text(f"SELECT MAX(trade_date) FROM {table_name}")).scalar()
+                        if max_res:
+                            target_date_obj = pd.to_datetime(max_res).date()
+                        else:
+                            return pd.DataFrame()
+                    except Exception as ex:
+                        logger.warning(f"Invalid trade_date string '{trade_date}': {ex}")
+                        return pd.DataFrame()
 
     # 2. Clean and deduplicate symbols
     raw_symbols = symbols if symbols is not None else symbol
