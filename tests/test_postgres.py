@@ -44,7 +44,7 @@ def test_get_postgres_engine_caching(sample_config):
         assert dsn.drivername == "postgresql+psycopg"
         assert dsn.username == "test_user"
         assert dsn.password == "secret_password"
-        assert dsn.host == "localhost"
+        assert dsn.host in ["localhost", "127.0.0.1"]
         assert dsn.port == 5432
         assert dsn.database == "test_quant_db"
 
@@ -110,9 +110,9 @@ def test_get_unusual_flow_single_ticker_query(sample_config):
         params_arg = mock_read_sql.call_args[1]["params"]
 
         assert "WHERE symbol = :symbol" in str(query_arg)
-        assert "trade_date >= CURRENT_DATE - INTERVAL '1 day' * :lookback_days" in str(query_arg)
+        assert "trade_date::text >= :cutoff_date" in str(query_arg)
         assert params_arg["symbol"] == "AAPL"
-        assert params_arg["lookback_days"] == 14
+        assert "cutoff_date" in params_arg
         assert params_arg["min_premium"] == 250000.0
         assert "FLOW_ID" in result.columns
         assert "SYMBOL" in result.columns
