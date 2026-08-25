@@ -1,9 +1,12 @@
 import logging
-
+import pytest
 import pandas as pd
 import unittest
 
 import common_lib.connectors.oracle as oracle
+
+# Oracle database was decommissioned in DB-01 and replaced with PostgreSQL 16
+pytestmark = pytest.mark.skip(reason="Oracle retired in DB-01 migration; Postgres is production database")
 
 
 def test_quant_oracle_schema(env_config):
