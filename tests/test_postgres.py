@@ -110,7 +110,7 @@ def test_get_unusual_flow_single_ticker_query(sample_config):
         params_arg = mock_read_sql.call_args[1]["params"]
 
         assert "WHERE symbol = :symbol" in str(query_arg)
-        assert "trade_date::text >= :cutoff_date" in str(query_arg)
+        assert "trade_date >= :cutoff_date" in str(query_arg)
         assert params_arg["symbol"] == "AAPL"
         assert "cutoff_date" in params_arg
         assert params_arg["min_premium"] == 250000.0
@@ -210,3 +210,104 @@ def test_insert_into_table_modes(sample_config):
 
         with pytest.raises(ValueError):
             pg_conn.insert_into_table(sample_config, df, "test_tbl", "invalid_mode", ["symbol"])
+
+
+def test_get_unusual_flow_market_wide_date(sample_config):
+    """Verifies get_unusual_flow generates market-wide query when trade_date is provided and symbols is None or MARKET."""
+    mock_engine = MagicMock(spec=sa.Engine)
+    mock_df = pd.DataFrame([
+        {"flow_id": "m1", "symbol": "NVDA", "premium": 5000000.0, "trade_date": "2026-08-21"},
+        {"flow_id": "m2", "symbol": "TSLA", "premium": 3000000.0, "trade_date": "2026-08-21"}
+    ])
+
+    with patch("common_lib.connectors.postgres._get_postgres_engine", return_value=mock_engine), \
+         patch("pandas.read_sql_query", return_value=mock_df) as mock_read_sql:
+
+        result = pg_conn.get_unusual_flow(
+            config=sample_config,
+            symbols=None,
+            trade_date="2026-08-21",
+            min_premium=500000.0,
+            limit=50
+        )
+
+        assert mock_read_sql.call_count == 1
+        query_arg = str(mock_read_sql.call_args[0][0])
+        params_arg = mock_read_sql.call_args[1]["params"]
+
+        assert "WHERE trade_date = :target_date" in query_arg
+        assert "symbol" not in params_arg
+        assert params_arg["target_date"] == "2026-08-21"
+        assert params_arg["min_premium"] == 500000.0
+        assert "LIMIT :limit" in query_arg
+        assert params_arg["limit"] == 50
+        assert len(result) == 2
+        assert "FLOW_ID" in result.columns
+
+
+def test_get_unusual_flow_symbol_with_trade_date(sample_config):
+    """Verifies get_unusual_flow generates symbol + trade_date query when both are provided."""
+    mock_engine = MagicMock(spec=sa.Engine)
+    mock_df = pd.DataFrame([
+        {"flow_id": "s1", "symbol": "NVDA", "premium": 2000000.0, "trade_date": "2026-08-21"}
+    ])
+
+    with patch("common_lib.connectors.postgres._get_postgres_engine", return_value=mock_engine), \
+         patch("pandas.read_sql_query", return_value=mock_df) as mock_read_sql:
+
+        result = pg_conn.get_unusual_flow(
+            config=sample_config,
+            symbols="NVDA",
+            trade_date=date(2026, 8, 21),
+            min_premium=0.0
+        )
+
+        assert mock_read_sql.call_count == 1
+        query_arg = str(mock_read_sql.call_args[0][0])
+        params_arg = mock_read_sql.call_args[1]["params"]
+
+        assert "WHERE symbol = :symbol" in query_arg
+        assert "trade_date = :target_date" in query_arg
+        assert params_arg["symbol"] == "NVDA"
+        assert params_arg["target_date"] == "2026-08-21"
+
+
+def test_get_unusual_flow_trade_date_latest_and_yesterday(sample_config):
+    """Verifies trade_date='latest' queries MAX(trade_date) and trade_date='yesterday' calculates weekday."""
+    mock_engine = MagicMock(spec=sa.Engine)
+    mock_conn = MagicMock()
+    mock_engine.connect.return_value.__enter__.return_value = mock_conn
+    mock_conn.execute.return_value.scalar.return_value = "2026-08-21"
+
+    mock_df = pd.DataFrame([{"flow_id": "l1", "symbol": "SPY", "premium": 1000000.0}])
+
+    with patch("common_lib.connectors.postgres._get_postgres_engine", return_value=mock_engine), \
+         patch("pandas.read_sql_query", return_value=mock_df) as mock_read_sql:
+
+        # Test latest
+        res_latest = pg_conn.get_unusual_flow(
+            config=sample_config,
+            symbols="MARKET",
+            trade_date="latest"
+        )
+        assert mock_conn.execute.call_count == 1
+        assert "SELECT MAX(trade_date)" in str(mock_conn.execute.call_args[0][0])
+        assert not res_latest.empty
+
+        # Test latest fallback when table empty
+        mock_conn.execute.return_value.scalar.return_value = None
+        res_empty = pg_conn.get_unusual_flow(
+            config=sample_config,
+            trade_date="latest"
+        )
+        assert res_empty.empty
+
+        # Test yesterday
+        mock_read_sql.reset_mock()
+        res_yesterday = pg_conn.get_unusual_flow(
+            config=sample_config,
+            trade_date="yesterday"
+        )
+        assert mock_read_sql.call_count == 1
+        yesterday_params = mock_read_sql.call_args[1]["params"]
+        assert "target_date" in yesterday_params

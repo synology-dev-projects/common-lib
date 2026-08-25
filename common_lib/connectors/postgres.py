@@ -1,7 +1,7 @@
 import logging
 import time
 from functools import lru_cache
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Any, Union, List, Optional
 
 import pandas as pd
@@ -208,67 +208,164 @@ def insert_into_table(
 def get_unusual_flow(
     config: MainConfig,
     symbols: Optional[Union[str, List[str]]] = None,
+    trade_date: Optional[Union[date, str]] = None,
     lookback_days: int = 30,
     min_premium: float = 0.0,
-    symbol: Optional[Union[str, List[str]]] = None,
-    limit: Optional[int] = None
+    limit: Optional[int] = 100,
+    symbol: Optional[Union[str, List[str]]] = None
 ) -> pd.DataFrame:
     """
-    Queries unusual_option_flow_te for records matching symbol IN (...) and
-    trade_date >= CURRENT_DATE - INTERVAL '1 day' * :lookback_days ordered by trade_date DESC, premium DESC.
-    Accepts single symbol string, comma-separated symbols string, or list of symbols.
-    Executes multi-ticker batch queries in a single flight.
+    Queries unusual_option_flow_te for records matching symbol IN (...) or single-day market flow.
+    - If trade_date is provided:
+        - 'latest': dynamically queries SELECT MAX(trade_date) FROM unusual_option_flow_te.
+        - 'yesterday': calculates closest prior weekday.
+        - 'today' or string date: parsed with pd.to_datetime.
+      Filters on trade_date = :target_date AND premium >= :min_premium ORDER BY premium DESC.
+      If symbols is None or 'MARKET' / 'ALL', queries market-wide flow.
+    - If trade_date is None: queries symbol(s) with trade_date >= CURRENT_DATE - INTERVAL :lookback_days.
     Safe fallback if table does not exist or has zero rows. Returns uppercase column names.
     """
-    table_name = getattr(config, "postgres_unusual_flow_table_name", "unusual_option_flow_te").lower()
-    raw_symbols = symbols if symbols is not None else symbol
-    if raw_symbols is None:
-        return pd.DataFrame()
-
-    if isinstance(raw_symbols, str):
-        raw_list = raw_symbols.split(",")
-    elif isinstance(raw_symbols, (list, tuple, set)):
-        raw_list = list(raw_symbols)
-    else:
-        raw_list = [str(raw_symbols)]
-
-    # Clean and deduplicate symbols while preserving order
-    seen = set()
-    list_of_symbols = []
-    for s in raw_list:
-        clean_s = str(s).strip().upper().replace("$", "")
-        if clean_s and clean_s not in seen:
-            seen.add(clean_s)
-            list_of_symbols.append(clean_s)
-
-    if not list_of_symbols:
-        return pd.DataFrame()
-
     from datetime import timedelta
-    cutoff_date = (date.today() - timedelta(days=int(lookback_days))).strftime("%Y-%m-%d")
-    params: dict[str, Any] = {
-        "cutoff_date": cutoff_date,
-        "min_premium": float(min_premium),
-    }
+    table_name = getattr(config, "postgres_unusual_flow_table_name", "unusual_option_flow_te").lower()
 
-    if len(list_of_symbols) == 1:
-        where_symbol_clause = "WHERE symbol = :symbol"
-        params["symbol"] = list_of_symbols[0]
+    # 1. Parse trade_date if specified
+    target_date_obj: Optional[date] = None
+    if trade_date is not None and str(trade_date).strip() != "":
+        if isinstance(trade_date, datetime):
+            target_date_obj = trade_date.date()
+        elif isinstance(trade_date, date):
+            target_date_obj = trade_date
+        elif isinstance(trade_date, str):
+            td_clean = trade_date.strip().lower()
+            if td_clean == "latest":
+                try:
+                    engine = _get_postgres_engine(config)
+                    with engine.connect() as conn:
+                        max_res = conn.execute(sa.text(f"SELECT MAX(trade_date) FROM {table_name}")).scalar()
+                    if max_res is None:
+                        return pd.DataFrame()
+                    target_date_obj = pd.to_datetime(max_res).date()
+                except Exception as ex:
+                    logger.warning(f"Error querying MAX(trade_date) from {table_name}: {ex}")
+                    return pd.DataFrame()
+            elif td_clean == "yesterday":
+                today = date.today()
+                if today.weekday() == 0:  # Monday -> Friday
+                    target_date_obj = today - timedelta(days=3)
+                elif today.weekday() == 6:  # Sunday -> Friday
+                    target_date_obj = today - timedelta(days=2)
+                else:
+                    target_date_obj = today - timedelta(days=1)
+            elif td_clean == "today":
+                target_date_obj = date.today()
+            else:
+                try:
+                    target_date_obj = pd.to_datetime(trade_date).date()
+                except Exception as ex:
+                    logger.warning(f"Invalid trade_date string '{trade_date}': {ex}")
+                    return pd.DataFrame()
+
+    # 2. Clean and deduplicate symbols
+    raw_symbols = symbols if symbols is not None else symbol
+    list_of_symbols = []
+    if raw_symbols is not None:
+        if isinstance(raw_symbols, str):
+            raw_list = raw_symbols.split(",")
+        elif isinstance(raw_symbols, (list, tuple, set)):
+            raw_list = list(raw_symbols)
+        else:
+            raw_list = [str(raw_symbols)]
+
+        seen = set()
+        for s in raw_list:
+            clean_s = str(s).strip().upper().replace("$", "")
+            if clean_s and clean_s not in seen:
+                seen.add(clean_s)
+                list_of_symbols.append(clean_s)
+
+    # 3. Formulate query based on trade_date vs lookback
+    limit_clause = f"LIMIT {int(limit)}" if (limit is not None and limit > 0) else ""
+
+    if target_date_obj is not None:
+        target_date_str = target_date_obj.strftime("%Y-%m-%d")
+        params: dict[str, Any] = {
+            "target_date": target_date_str,
+            "min_premium": float(min_premium),
+        }
+        is_market_query = (not list_of_symbols) or (list_of_symbols in (["MARKET"], ["ALL"]))
+
+        if limit is not None:
+            limit_clause = "LIMIT :limit"
+            params["limit"] = int(limit)
+        else:
+            limit_clause = ""
+
+        if is_market_query:
+            query = f"""
+                SELECT flow_id, trade_date, symbol, order_type, strike_price, strike_otm_pct,
+                       expiration_date, open_interest, is_unusual_oi, premium, net_score, created_at
+                FROM {table_name}
+                WHERE trade_date = :target_date
+                  AND premium >= :min_premium
+                ORDER BY premium DESC
+                {limit_clause}
+            """
+        else:
+            if len(list_of_symbols) == 1:
+                where_symbol_clause = "WHERE symbol = :symbol"
+                params["symbol"] = list_of_symbols[0]
+            else:
+                bind_placeholders = ", ".join([f":sym_{i}" for i in range(len(list_of_symbols))])
+                where_symbol_clause = f"WHERE symbol IN ({bind_placeholders})"
+                for i, s in enumerate(list_of_symbols):
+                    params[f"sym_{i}"] = s
+
+            query = f"""
+                SELECT flow_id, trade_date, symbol, order_type, strike_price, strike_otm_pct,
+                       expiration_date, open_interest, is_unusual_oi, premium, net_score, created_at
+                FROM {table_name}
+                {where_symbol_clause}
+                  AND trade_date = :target_date
+                  AND premium >= :min_premium
+                ORDER BY premium DESC
+                {limit_clause}
+            """
     else:
-        bind_placeholders = ", ".join([f":sym_{i}" for i in range(len(list_of_symbols))])
-        where_symbol_clause = f"WHERE symbol IN ({bind_placeholders})"
-        for i, s in enumerate(list_of_symbols):
-            params[f"sym_{i}"] = s
+        # Lookback-based query requires symbols
+        if not list_of_symbols:
+            return pd.DataFrame()
 
-    query = f"""
-        SELECT flow_id, trade_date, symbol, order_type, strike_price, strike_otm_pct,
-               expiration_date, open_interest, is_unusual_oi, premium, net_score, created_at
-        FROM {table_name}
-        {where_symbol_clause}
-          AND trade_date::text >= :cutoff_date
-          AND premium >= :min_premium
-        ORDER BY trade_date DESC, premium DESC
-    """
+        cutoff_date = (date.today() - timedelta(days=int(lookback_days))).strftime("%Y-%m-%d")
+        params = {
+            "cutoff_date": cutoff_date,
+            "min_premium": float(min_premium),
+        }
+
+        if limit is not None:
+            limit_clause = "LIMIT :limit"
+            params["limit"] = int(limit)
+        else:
+            limit_clause = ""
+
+        if list_of_symbols in (["MARKET"], ["ALL"]):
+            where_clause = "WHERE trade_date >= :cutoff_date AND premium >= :min_premium"
+        elif len(list_of_symbols) == 1:
+            where_clause = "WHERE symbol = :symbol AND trade_date >= :cutoff_date AND premium >= :min_premium"
+            params["symbol"] = list_of_symbols[0]
+        else:
+            bind_placeholders = ", ".join([f":sym_{i}" for i in range(len(list_of_symbols))])
+            where_clause = f"WHERE symbol IN ({bind_placeholders}) AND trade_date >= :cutoff_date AND premium >= :min_premium"
+            for i, s in enumerate(list_of_symbols):
+                params[f"sym_{i}"] = s
+
+        query = f"""
+            SELECT flow_id, trade_date, symbol, order_type, strike_price, strike_otm_pct,
+                   expiration_date, open_interest, is_unusual_oi, premium, net_score, created_at
+            FROM {table_name}
+            {where_clause}
+            ORDER BY trade_date DESC, premium DESC
+            {limit_clause}
+        """
 
     try:
         engine = _get_postgres_engine(config)
@@ -278,11 +375,9 @@ def get_unusual_flow(
             params=params
         )
         df.columns = df.columns.str.upper()
-        if limit is not None and limit > 0:
-            df = df.head(limit)
         return df
     except Exception as ex:
-        logger.warning(f"Error querying unusual flow from PostgreSQL {table_name} for symbols {list_of_symbols}: {ex}")
+        logger.warning(f"Error querying unusual flow from PostgreSQL {table_name}: {ex}")
         return pd.DataFrame()
 
 
