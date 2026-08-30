@@ -1,0 +1,8 @@
+repos:
+  - repo: local
+    hooks:
+      - id: pytest-suite
+        name: ?? Common-Lib Pytest Suite
+        entry: pytest tests/ -v
+        language: system
+        pass_filenames: false

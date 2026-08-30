@@ -48,6 +48,12 @@ jobs:
           echo "📂 Config Path: $COMMON_CONFIG_PATH"
           echo "CONFIG_DIR=$COMMON_CONFIG_PATH" >> $GITHUB_ENV
 
+      # 3.5 Pre-Flight Test Gate
+      - name: Run Pre-Flight Test Gate
+        run: |
+          echo "🧪 Running Common-Lib Pytest Suite..."
+          (python3 -m pytest tests/ -v || python -m pytest tests/ -v || pytest tests/ -v)
+
       # 4. DEPLOY CODE (Copy files BEFORE installing deps)
       - name: Sync Code to Project Root
         run: |
@@ -133,17 +139,4 @@ jobs:
           echo "📡 Verifying common-lib package import..."
           cd "${{ env.DEPLOY_DIR }}"
           export PATH="$(pwd)/.venv/bin:$PATH"
-          python -c "import sys, common_lib; print('✅ common_lib package imports cleanly on Python', sys.version)"
-
-      # 8. MERGE LOGIC (Unchanged)
-      - name: Auto-Promote to Master
-        if: github.ref_name == 'develop'
-        run: |
-          echo "✅ Develop verified. Promoting to Master..."
-          git config user.name "GitHub Actions Bot"
-          git config user.email "actions@github.com"
-          git fetch origin develop
-          git checkout master
-          git pull origin master
-          git merge origin/develop --no-ff -m "Auto-merge develop to master"
-          git push origin master
+          python -c "import sys, common_lib; print('✅ common_lib package imports cleanly on Python', sys.version)"
