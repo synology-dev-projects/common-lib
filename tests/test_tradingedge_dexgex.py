@@ -10,16 +10,19 @@ import pandas as pd
 import numpy as np
 
 
+@pytest.mark.integration
 def test_auth_is_valid(dex_gex_data_extract):
     cookie_val = dex_gex_data_extract["cookie"]
     assert cookie_val is not None
 
 
+@pytest.mark.integration
 def test_raw_data_contains_ticker(dex_gex_data_extract):
     raw_data = dex_gex_data_extract["raw_data"]
     assert "ticker" in raw_data
 
 
+@pytest.mark.integration
 def test_clean_data_math(dex_gex_data_extract):
     clean_data = dex_gex_data_extract["clean_data"]
     assert isinstance(clean_data, pd.DataFrame) and not clean_data.empty, "clean_data must be a non-empty DataFrame"
