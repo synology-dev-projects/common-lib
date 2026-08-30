@@ -48,6 +48,7 @@ def run(config: MainConfig, df: pd.DataFrame, write_mode: str = "upsert") -> int
         table_name=table_name,
         pks=primary_keys
     )
+    postgres.ensure_flow_indexes(config)
     logger.info(f"Successfully upserted {len(df)} records into {table_name}.")
     return len(df)
 
