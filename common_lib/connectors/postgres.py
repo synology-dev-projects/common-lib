@@ -65,6 +65,14 @@ def _get_engine(config: MainConfig) -> sa.Engine:
     return _get_postgres_engine(config)
 
 
+def get_postgres_engine(engine_or_config: Optional[Union[sa.Engine, MainConfig, dict]] = None) -> sa.Engine:
+    """
+    Public factory function to retrieve or build a cached SQLAlchemy PostgreSQL engine.
+    """
+    from common_lib.database.postgres import get_postgres_engine as _resolve_engine
+    return _resolve_engine(engine_or_config)
+
+
 # ==============================================================================
 # PUBLIC API
 # ==============================================================================
