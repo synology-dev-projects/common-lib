@@ -511,3 +511,23 @@ def _df_to_sa_types(df: pd.DataFrame, default_string_length: int = 255) -> dict:
         else:
             types[col_name] = sa.String(default_string_length)
     return types
+
+
+def ensure_flow_indexes(config: MainConfig) -> None:
+    """
+    Idempotently creates composite B-tree indices on unusual_option_flow_te
+    for ultra-fast date range and ticker scans.
+    """
+    engine = _get_postgres_engine(config)
+    index_sqls = [
+        "CREATE INDEX IF NOT EXISTS idx_flow_trade_date_prem ON unusual_option_flow_te (trade_date DESC, premium DESC);",
+        "CREATE INDEX IF NOT EXISTS idx_flow_symbol_date ON unusual_option_flow_te (symbol, trade_date DESC);"
+    ]
+    try:
+        with engine.begin() as conn:
+            for sql_stmt in index_sqls:
+                conn.execute(sa.text(sql_stmt))
+        logger.info("Successfully verified/created composite indices on unusual_option_flow_te.")
+    except Exception as ex:
+        logger.warning(f"Could not create flow indices (table may not exist yet): {ex}")
+
