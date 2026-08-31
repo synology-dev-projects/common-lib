@@ -31,8 +31,8 @@ def main():
     print("=" * 60)
 
     # 1. Gate 1: common-lib
-    print("\n[Gate 1] Pushing common-lib to develop...")
-    ok, _ = run_cmd("git add -A && git commit -m 'chore: automated deploy' && git push origin develop", cwd=r"c:\Coding\VSCode\Quant System\common-lib")
+    print("\n[Gate 1] Pushing common-lib to develop2...")
+    ok, _ = run_cmd("git add -A && git commit -m 'chore: automated deploy' && git push origin develop2", cwd=r"c:\Coding\VSCode\Quant System\common-lib")
     if not ok:
         print("⚠️ Nothing to commit or push failed in common-lib.")
 
@@ -47,13 +47,13 @@ def main():
 
     # 2. Gate 2: gexdex-api & backend microservices
     print("\n[Gate 2] Pushing backend microservices (gexdex-api)...")
-    run_cmd("git add -A && git commit -m 'chore: automated deploy' && git push origin develop", cwd=r"c:\Coding\VSCode\Quant System\gexdex-api")
+    run_cmd("git add -A && git commit -m 'chore: automated deploy' && git push origin develop2", cwd=r"c:\Coding\VSCode\Quant System\gexdex-api")
 
     time.sleep(15)
 
     # 3. Gate 3: quant-pwa (ALWAYS LAST)
     print("\n[Gate 3] Pushing quant-pwa (LAST)...")
-    run_cmd("git add -A && git commit -m 'chore: automated deploy' && git push origin develop", cwd=r"c:\Coding\VSCode\Quant System\quant-pwa")
+    run_cmd("git add -A && git commit -m 'chore: automated deploy' && git push origin develop2", cwd=r"c:\Coding\VSCode\Quant System\quant-pwa")
     print("\n🎉 Deployment completed in strict sequence!")
 
 if __name__ == "__main__":
