@@ -20,10 +20,10 @@ def run_cmd(cmd, cwd=None):
     return True, res.stdout.strip()
 
 def check_synology_runner():
-    """Checks if the Synology self-hosted runner has finished running jobs."""
-    cmd = 'plink.exe -ssh -pw "4354GoGo!!" -batch rachardv@192.168.1.68 "echo \'4354GoGo!!\' | sudo -S /usr/local/bin/docker logs --tail 5 synology-github-runner"'
+    """Checks the latest GitHub Actions workflow run conclusion for common-lib using GitHub CLI."""
+    cmd = 'gh run list --repo synology-dev-projects/common-lib -L 1 --json status,conclusion -q ".[0].conclusion // .[0].status"'
     ok, out = run_cmd(cmd)
-    return out
+    return out.strip() if ok else ""
 
 def main():
     print("=" * 60)
@@ -31,29 +31,29 @@ def main():
     print("=" * 60)
 
     # 1. Gate 1: common-lib
-    print("\n[Gate 1] Pushing common-lib to develop...")
-    ok, _ = run_cmd("git add -A && git commit -m 'chore: automated deploy' && git push origin develop", cwd=r"c:\Coding\VSCode\Quant System\common-lib")
+    print("\n[Gate 1] Pushing common-lib to develop2...")
+    ok, _ = run_cmd("git add -A && git commit -m 'chore: automated deploy' && git push origin develop2", cwd=r"c:\Coding\VSCode\Quant System\common-lib")
     if not ok:
         print("⚠️ Nothing to commit or push failed in common-lib.")
 
-    print("\n⏳ [Gate 1] Waiting for Synology Runner to verify and merge common-lib to master...")
-    for attempt in range(20):
+    print("\n⏳ [Gate 1] Waiting for Synology Runner to verify and deploy common-lib...")
+    for attempt in range(25):
         time.sleep(10)
-        logs = check_synology_runner()
-        print(f"[{attempt + 1}/20] Checking runner status...")
-        if "Job deploy-branch completed with result: Succeeded" in logs:
-            print("✅ common-lib master promotion confirmed!")
+        status = check_synology_runner()
+        print(f"[{attempt + 1}/25] Checking GitHub Actions workflow status: '{status}'...")
+        if status == "success":
+            print("✅ common-lib deployment confirmed successful on Synology runner!")
             break
 
     # 2. Gate 2: gexdex-api & backend microservices
-    print("\n[Gate 2] Pushing backend microservices (gexdex-api)...")
-    run_cmd("git add -A && git commit -m 'chore: automated deploy' && git push origin develop", cwd=r"c:\Coding\VSCode\Quant System\gexdex-api")
-
-    time.sleep(15)
+    # NOTE: gexdex-api has been decommissioned and archived into archive/gexdex-api.
+    # Its options microstructure engine now runs in-process inside quant-pwa/gateway/app/engine/service.py.
+    # Standalone push is bypassed; microservices deploy automatically with quant-pwa (Gate 3).
+    print("\n[Gate 2] Backend microservices: gexdex-api archived (consolidated in-process in quant-pwa Gateway).")
 
     # 3. Gate 3: quant-pwa (ALWAYS LAST)
     print("\n[Gate 3] Pushing quant-pwa (LAST)...")
-    run_cmd("git add -A && git commit -m 'chore: automated deploy' && git push origin develop", cwd=r"c:\Coding\VSCode\Quant System\quant-pwa")
+    run_cmd("git add -A && git commit -m 'chore: automated deploy' && git push origin develop2", cwd=r"c:\Coding\VSCode\Quant System\quant-pwa")
     print("\n🎉 Deployment completed in strict sequence!")
 
 if __name__ == "__main__":

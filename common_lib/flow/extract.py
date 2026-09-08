@@ -86,6 +86,10 @@ def parse_html_flow_table(html_content: str, symbol: Optional[str] = None) -> tu
         raw_exp = texts[4] if len(texts) > 4 else ""
         raw_oi = texts[5] if len(texts) > 5 else ""
         raw_premium = texts[6] if len(texts) > 6 else ""
+
+        # Skip summary / total / footer rows: An authentic option trade MUST have both a trade date and strike
+        if not raw_trade_date.strip() or not raw_strike.strip():
+            continue
         
         is_unusual_oi = 1 if (tds[5].find("svg") or "▲" in raw_oi or "⚠️" in raw_oi) else 0
         

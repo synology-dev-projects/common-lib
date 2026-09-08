@@ -1,8 +1,15 @@
 repos:
   - repo: local
     hooks:
+      - id: secret-scan
+        name: 🔒 Zero-Critical-Defects Secret Scanner
+        entry: python "C:/Coding/VSCode/Quant System/scripts/check_secrets.py"
+        language: system
+        pass_filenames: false
+
       - id: pytest-suite
-        name: ?? Common-Lib Pytest Suite
+        name: 🧪 Common-Lib Pytest Suite
         entry: pytest tests/ -v
         language: system
         pass_filenames: false
+

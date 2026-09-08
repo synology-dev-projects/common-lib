@@ -142,8 +142,8 @@ def transform_flow_records(raw_records: List[Dict[str, Any]], net_score: Optiona
         raw_score = item.get("net_score") if item.get("net_score") is not None else net_score
         net_score_val = float(raw_score) if raw_score is not None else 0.0
         
-        # Skip empty/footer rows
-        if stk_val <= 0 and premium_val <= 0:
+        # Skip empty/footer/invalid rows: Options contracts cannot have zero or negative strikes
+        if stk_val <= 0:
             continue
 
         row_dict = {

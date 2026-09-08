@@ -48,10 +48,10 @@ class MainConfig(BaseSettings):
     postgres_quant_table_name: str = "quant_lvl_data_te"
     postgres_unusual_flow_table_name: str = "unusual_option_flow_te"
 
-    # --- ORACLE CREDENTIALS  --- #
-    oracle_user: str = Field(...)
-    oracle_pass: SecretStr = Field(...)
-    oracle_service: str = Field(...)
+    # --- ORACLE CREDENTIALS (DEPRECATED - Optional for legacy backward compatibility) --- #
+    oracle_user: str | None = Field(default=None)
+    oracle_pass: SecretStr | None = Field(default=None)
+    oracle_service: str | None = Field(default=None)
 
     # --- ORACLE TABLE INFO --- #
 

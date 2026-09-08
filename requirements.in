@@ -3,7 +3,6 @@ pytest
 numpy
 pandas
 sqlalchemy
-oracledb
 python-dotenv
 pydantic
 pydantic-settings

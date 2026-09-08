@@ -40,8 +40,6 @@ numpy==2.4.2
     #   eventkit
     #   exchange-calendars
     #   pandas
-oracledb==3.0.0
-    # via -r requirements.in
 packaging==26.0
     # via pytest
 pandas==3.0.1

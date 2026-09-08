@@ -373,6 +373,9 @@ def get_unusual_flow(
 
         where_clauses.append("premium >= :min_premium")
 
+    # Options prints must have a positive strike price (excludes phantom aggregate table footers)
+    where_clauses.append("strike_price > 0")
+
     if not where_clauses:
         return pd.DataFrame()
 
