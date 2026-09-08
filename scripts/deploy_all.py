@@ -46,10 +46,10 @@ def main():
             break
 
     # 2. Gate 2: gexdex-api & backend microservices
-    print("\n[Gate 2] Pushing backend microservices (gexdex-api)...")
-    run_cmd("git add -A && git commit -m 'chore: automated deploy' && git push origin develop2", cwd=r"c:\Coding\VSCode\Quant System\gexdex-api")
-
-    time.sleep(15)
+    # NOTE: gexdex-api has been decommissioned and archived into archive/gexdex-api.
+    # Its options microstructure engine now runs in-process inside quant-pwa/gateway/app/engine/service.py.
+    # Standalone push is bypassed; microservices deploy automatically with quant-pwa (Gate 3).
+    print("\n[Gate 2] Backend microservices: gexdex-api archived (consolidated in-process in quant-pwa Gateway).")
 
     # 3. Gate 3: quant-pwa (ALWAYS LAST)
     print("\n[Gate 3] Pushing quant-pwa (LAST)...")
