@@ -5,12 +5,6 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import numpy as np
-
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_agg import FigureCanvasAgg
-import matplotlib.patches as mpatches
-from matplotlib.ticker import FuncFormatter
-
 from common_lib.config.main_config import MainConfig, load_config
 
 _cached_session: requests.Session | None = None
@@ -229,6 +223,15 @@ def generate_gexdex_chart(
     """
     if df is None or df.empty:
         raise ValueError("Cannot generate GEX/DEX chart from an empty DataFrame.")
+
+    try:
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        import matplotlib.patches as mpatches
+        from matplotlib.ticker import FuncFormatter
+    except (ImportError, ModuleNotFoundError) as err:
+        logging.warning(f"Matplotlib is not installed; cannot generate GEX/DEX image: {err}")
+        return b""
 
     df_copy = df.copy()
 
