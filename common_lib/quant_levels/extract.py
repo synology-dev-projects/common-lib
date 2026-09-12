@@ -3,7 +3,8 @@ from common_lib.config.main_config import MainConfig as Config
 import logging
 import requests
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date, timezone
+from zoneinfo import ZoneInfo
 from dateutil import parser
 from bs4 import BeautifulSoup
 import re
@@ -31,6 +32,44 @@ def run(config: Config, cutoff_date: Optional[datetime] = None) -> List[Dict[str
     json_response_with_file = _extract_file_link(json_response_with_raw_text)
 
     return json_response_with_file
+
+
+def fetch_posts_for_date(config: Config, target_date: date) -> List[Dict[str, Any]]:
+    """
+    Fetches and filters Mighty feed posts specifically for the requested target_date.
+    Scans pages until posts are older than target_date, parses html and files,
+    and returns posts corresponding to target_date.
+    """
+    if isinstance(target_date, str):
+        target_date = datetime.strptime(target_date, "%Y-%m-%d").date()
+    elif isinstance(target_date, datetime):
+        target_date = target_date.date()
+
+    # Set cutoff to start of the previous day to ensure full day coverage
+    cutoff_dt = datetime.combine(target_date - timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+    raw_json_response = _fetch_raw_feed(config, cutoff_date=cutoff_dt)
+    json_response_with_html = _parse_feed_data(raw_json_response)
+    json_response_with_raw_text = _extract_quant_levels_from_post_body(json_response_with_html)
+    json_response_with_file = _extract_file_link(json_response_with_raw_text)
+
+    matching_posts: List[Dict[str, Any]] = []
+    ny_tz = ZoneInfo("America/New_York")
+    for post in json_response_with_file:
+        raw_date_str = post.get("date_posted")
+        if not raw_date_str:
+            continue
+        try:
+            item_dt = parser.isoparse(raw_date_str)
+            item_date = item_dt.date()
+            item_date_ny = item_dt.astimezone(ny_tz).date() if item_dt.tzinfo else item_date
+            if item_date == target_date or item_date_ny == target_date:
+                matching_posts.append(post)
+        except Exception as e:
+            logger.warning(f"Error parsing date_posted '{raw_date_str}': {e}")
+            continue
+
+    logger.info(f"Found {len(matching_posts)} posts matching target_date {target_date}.")
+    return matching_posts
 
 
 def _fetch_raw_feed(config: Config, cutoff_date: Optional[datetime] = None) -> list:
