@@ -1,6 +1,7 @@
 import logging
 import urllib.parse
 import io
+import time
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -8,6 +9,8 @@ import numpy as np
 from common_lib.config.main_config import MainConfig, load_config
 
 _cached_session: requests.Session | None = None
+_last_auth_time: float = 0.0
+AUTH_COOLDOWN_SECONDS: float = 30.0
 
 
 def get_authenticated_session(config: MainConfig, force_refresh: bool = False) -> requests.Session | None:
@@ -15,9 +18,18 @@ def get_authenticated_session(config: MainConfig, force_refresh: bool = False) -
     Returns a cached, authenticated requests.Session instance to enable
     TCP Connection pooling (Keep-Alive) and prevent re-authenticating on every API call.
     If force_refresh is True or the session expired, re-authenticates with TradingEdge login gate.
+    Enforces an AUTH_COOLDOWN_SECONDS throttle to protect against HTTP 429 rate-limiting.
     """
-    global _cached_session
+    global _cached_session, _last_auth_time
+    now = time.time()
     if _cached_session is not None and not force_refresh:
+        return _cached_session
+
+    if _cached_session is not None and (now - _last_auth_time) < AUTH_COOLDOWN_SECONDS:
+        logging.warning(
+            f"Re-auth requested within {AUTH_COOLDOWN_SECONDS}s cooldown "
+            f"(last auth {now - _last_auth_time:.1f}s ago). Reusing cached session."
+        )
         return _cached_session
 
     session = requests.Session()
@@ -31,6 +43,13 @@ def get_authenticated_session(config: MainConfig, force_refresh: bool = False) -
     # 1. GET request to load the login page and grab the CSRF token
     try:
         get_response = session.get(config.te_login_gate, timeout=10.0)
+        if get_response.status_code == 429:
+            retry_after = int(get_response.headers.get("Retry-After", 2))
+            wait_time = min(max(retry_after, 1), 5)
+            logging.warning(f"TradingEdge login gate GET returned 429. Backing off for {wait_time}s...")
+            time.sleep(wait_time)
+            get_response = session.get(config.te_login_gate, timeout=10.0)
+
         soup = BeautifulSoup(get_response.text, 'html.parser')
         token_input = soup.find('input', {'name': '_token'})
 
@@ -46,10 +65,17 @@ def get_authenticated_session(config: MainConfig, force_refresh: bool = False) -
 
         # 2. POST the payload to authenticate
         post_response = session.post(config.te_login_gate, data=payload, timeout=10.0)
+        if post_response.status_code == 429:
+            retry_after = int(post_response.headers.get("Retry-After", 2))
+            wait_time = min(max(retry_after, 1), 5)
+            logging.warning(f"TradingEdge login gate POST returned 429. Backing off for {wait_time}s...")
+            time.sleep(wait_time)
+            post_response = session.post(config.te_login_gate, data=payload, timeout=10.0)
 
         if post_response.status_code in [200, 302] and "Sessions expire" not in post_response.text:
             logging.info("TradingEdge authentication successful! Session cached.")
             _cached_session = session
+            _last_auth_time = time.time()
             return _cached_session
         else:
             logging.error(f"Authentication failed. Status: {post_response.status_code}")
@@ -125,10 +151,28 @@ def extract_raw_data(
             elif response.status_code in (400, 404):
                 logging.warning(f"TradingEdge returned HTTP {response.status_code} for ticker {ticker}. Ticker may be invalid or delisted.")
                 return None
+            elif response.status_code in (429, 500, 502, 503, 504):
+                logging.warning(f"TradingEdge server returned HTTP {response.status_code} for {ticker}. Not an auth expiration.")
+                return None
     except Exception as req_err:
         logging.warning(f"Initial request to TradingEdge failed for {ticker}: {req_err}")
+        return None
 
-    # Session recovery: Automatically re-authenticate only if session might be expired
+    # Check if failure was specifically due to session expiration / auth failure
+    is_auth_error = False
+    if response is not None:
+        if response.status_code in (401, 403):
+            is_auth_error = True
+        elif response.status_code == 200 and ("login" in response.text.lower() or "sessions expire" in response.text.lower() or "_token" in response.text):
+            is_auth_error = True
+        elif any(r.status_code in (301, 302, 303, 307, 308) for r in getattr(response, "history", [])):
+            is_auth_error = True
+
+    if not is_auth_error:
+        logging.warning(f"Request failed for {ticker} but not due to auth expiration. Skipping re-authentication.")
+        return None
+
+    # Session recovery: Automatically re-authenticate only if session is expired
     logging.warning(f"TradingEdge session expired or returned auth error for {ticker}. Triggering automatic re-authentication...")
     fresh_session = get_authenticated_session(config, force_refresh=True)
     if fresh_session:
