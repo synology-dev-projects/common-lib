@@ -2,6 +2,9 @@ import logging
 import urllib.parse
 import io
 import time
+import json
+import tempfile
+from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -11,14 +14,18 @@ from common_lib.config.main_config import MainConfig, load_config
 _cached_session: requests.Session | None = None
 _last_auth_time: float = 0.0
 AUTH_COOLDOWN_SECONDS: float = 30.0
+SESSION_CACHE_FILE = Path(tempfile.gettempdir()) / "quant_te_session_cache.json"
+SESSION_CACHE_MAX_AGE = 5400  # 90 minutes (TradingEdge sets Max-Age=7200 / 2 hours)
 
 
 def get_authenticated_session(config: MainConfig, force_refresh: bool = False) -> requests.Session | None:
     """
     Returns a cached, authenticated requests.Session instance to enable
     TCP Connection pooling (Keep-Alive) and prevent re-authenticating on every API call.
+    Reuses in-memory session or loads valid session cookies from persistent disk cache
+    (valid up to 90 minutes) to eliminate repetitive /gate POST requests across processes.
     If force_refresh is True or the session expired, re-authenticates with TradingEdge login gate.
-    Enforces an AUTH_COOLDOWN_SECONDS throttle to protect against HTTP 429 rate-limiting.
+    Enforces an AUTH_COOLDOWN_SECONDS throttle and full Retry-After backoff to protect against HTTP 429.
     """
     global _cached_session, _last_auth_time
     now = time.time()
@@ -32,6 +39,28 @@ def get_authenticated_session(config: MainConfig, force_refresh: bool = False) -
         )
         return _cached_session
 
+    # Check disk cache if process-level cache is None and not force_refresh
+    if not force_refresh and SESSION_CACHE_FILE.exists():
+        try:
+            with open(SESSION_CACHE_FILE, "r", encoding="utf-8") as f:
+                cached_data = json.load(f)
+            cache_ts = cached_data.get("timestamp", 0)
+            if (now - cache_ts) < SESSION_CACHE_MAX_AGE and cached_data.get("cookies"):
+                disk_session = requests.Session()
+                disk_session.headers.update({
+                    "Accept": "*/*",
+                    "Accept-Encoding": "gzip, deflate, br, zstd",
+                    "Accept-Language": "en-CA,en;q=0.9,zh-CN;q=0.8,zh;q=0.7,en-GB;q=0.6,en-US;q=0.5",
+                    "User-Agent": config.te_user_agent
+                })
+                disk_session.cookies.update(cached_data["cookies"])
+                _cached_session = disk_session
+                _last_auth_time = cache_ts
+                logging.info(f"Loaded valid TradingEdge session from disk cache ({int(now - cache_ts)}s old). Skipped /gate auth.")
+                return _cached_session
+        except Exception as cache_err:
+            logging.warning(f"Could not load disk session cache: {cache_err}")
+
     session = requests.Session()
     session.headers.update({
         "Accept": "*/*",
@@ -44,8 +73,8 @@ def get_authenticated_session(config: MainConfig, force_refresh: bool = False) -
     try:
         get_response = session.get(config.te_login_gate, timeout=10.0)
         if get_response.status_code == 429:
-            retry_after = int(get_response.headers.get("Retry-After", 2))
-            wait_time = min(max(retry_after, 1), 5)
+            retry_after = int(get_response.headers.get("Retry-After", 30)) + 1
+            wait_time = min(max(retry_after, 2), 65)
             logging.warning(f"TradingEdge login gate GET returned 429. Backing off for {wait_time}s...")
             time.sleep(wait_time)
             get_response = session.get(config.te_login_gate, timeout=10.0)
@@ -66,8 +95,8 @@ def get_authenticated_session(config: MainConfig, force_refresh: bool = False) -
         # 2. POST the payload to authenticate
         post_response = session.post(config.te_login_gate, data=payload, timeout=10.0)
         if post_response.status_code == 429:
-            retry_after = int(post_response.headers.get("Retry-After", 2))
-            wait_time = min(max(retry_after, 1), 5)
+            retry_after = int(post_response.headers.get("Retry-After", 30)) + 1
+            wait_time = min(max(retry_after, 2), 65)
             logging.warning(f"TradingEdge login gate POST returned 429. Backing off for {wait_time}s...")
             time.sleep(wait_time)
             post_response = session.post(config.te_login_gate, data=payload, timeout=10.0)
@@ -76,6 +105,11 @@ def get_authenticated_session(config: MainConfig, force_refresh: bool = False) -
             logging.info("TradingEdge authentication successful! Session cached.")
             _cached_session = session
             _last_auth_time = time.time()
+            try:
+                with open(SESSION_CACHE_FILE, "w", encoding="utf-8") as f:
+                    json.dump({"timestamp": _last_auth_time, "cookies": session.cookies.get_dict()}, f)
+            except Exception:
+                pass
             return _cached_session
         else:
             logging.error(f"Authentication failed. Status: {post_response.status_code}")
@@ -174,6 +208,11 @@ def extract_raw_data(
 
     # Session recovery: Automatically re-authenticate only if session is expired
     logging.warning(f"TradingEdge session expired or returned auth error for {ticker}. Triggering automatic re-authentication...")
+    try:
+        if SESSION_CACHE_FILE.exists():
+            SESSION_CACHE_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
     fresh_session = get_authenticated_session(config, force_refresh=True)
     if fresh_session:
         try:
