@@ -22,49 +22,63 @@ def run_daily_incremental(config: Optional[MainConfig] = None) -> int:
     6. Upserts into PostgreSQL with load.run(config, "upsert", clean_df).
     7. Returns count of rows upserted (or 0 if no new posts).
     """
-    if config is None:
-        config = load_config()
-
     try:
-        cutoff_date = load._get_latest_recorded_date(config)
-        logger.info(f"Latest cutoff date found in DB: {cutoff_date}")
-    except CutoffDateNotFoundError as e:
-        logger.info(f"No cutoff date found in DB ({e}). Running without cutoff date.")
-        cutoff_date = None
-    except Exception as e:
-        logger.warning(f"Error querying cutoff date ({e}). Running without cutoff date.")
-        cutoff_date = None
+        if config is None:
+            config = load_config()
 
-    # 1. Fetch raw data from feed
-    raw_post_json = extract.run(config, cutoff_date=cutoff_date)
-    if not raw_post_json:
-        logger.info(f"No new posts found after cutoff_date: {cutoff_date}.")
-        return 0
+        try:
+            cutoff_date = load._get_latest_recorded_date(config)
+            logger.info(f"Latest cutoff date found in DB: {cutoff_date}")
+        except CutoffDateNotFoundError as e:
+            logger.info(f"No cutoff date found in DB ({e}). Running without cutoff date.")
+            cutoff_date = None
+        except Exception as e:
+            logger.warning(f"Error querying cutoff date ({e}). Running without cutoff date.")
+            cutoff_date = None
 
-    # 2. Transform unstructured data to structured df
-    clean_df = transform.run(config, raw_post_json)
-    if clean_df is None or clean_df.empty:
-        logger.info("Parsed/cleaned DataFrame is empty. 0 rows upserted.")
-        return 0
+        # 1. Fetch raw data from feed
+        raw_post_json = extract.run(config, cutoff_date=cutoff_date)
+        if not raw_post_json:
+            logger.info(f"No new posts found after cutoff_date: {cutoff_date}.")
+            return 0
 
-    # 3. Dispatch NTFY alert
-    try:
-        df_str = load._quant_lvl_df_to_string(clean_df)
-        nfty.send_ntfy_notification(
-            config.ntfy_endpoint,
-            "quant_alerts",
-            "NEW QUANT LVLS",
-            df_str,
-            3
-        )
-    except Exception as alert_err:
-        logger.warning(f"Failed to dispatch NTFY alert: {alert_err}")
+        # 2. Transform unstructured data to structured df
+        clean_df = transform.run(config, raw_post_json)
+        if clean_df is None or clean_df.empty:
+            logger.info("Parsed/cleaned DataFrame is empty. 0 rows upserted.")
+            return 0
 
-    # 4. Load df to postgres
-    load.run(config, "upsert", clean_df)
-    rows_upserted = len(clean_df)
-    logger.info(f"Daily incremental quant levels loaded successfully. {rows_upserted} rows upserted.")
-    return rows_upserted
+        # 3. Dispatch NTFY alert
+        try:
+            df_str = load._quant_lvl_df_to_string(clean_df)
+            nfty.send_ntfy_notification(
+                config.ntfy_endpoint,
+                "quant_alerts",
+                "NEW QUANT LVLS",
+                df_str,
+                3
+            )
+        except Exception as alert_err:
+            logger.warning(f"Failed to dispatch NTFY alert: {alert_err}")
+
+        # 4. Load df to postgres
+        load.run(config, "upsert", clean_df)
+        rows_upserted = len(clean_df)
+        logger.info(f"Daily incremental quant levels loaded successfully. {rows_upserted} rows upserted.")
+        return rows_upserted
+
+    except Exception as ex:
+        logger.error(f"Quant Levels incremental pipeline crash: {ex}", exc_info=True)
+        try:
+            from common_lib.connectors.alerts import dispatch_pipeline_failure_alert
+            dispatch_pipeline_failure_alert(
+                pipeline_name="Quant Levels",
+                error=ex,
+                config=config
+            )
+        except Exception as alert_ex:
+            logger.error(f"Failed to dispatch failure alert: {alert_ex}")
+        raise
 
 
 def run_target_date_extraction(target_date: date, config: Optional[MainConfig] = None) -> int:
@@ -76,30 +90,45 @@ def run_target_date_extraction(target_date: date, config: Optional[MainConfig] =
     4. Upserts into PostgreSQL quant_lvl_data_te with load.run(config, "upsert", clean_df).
     5. Returns count of rows upserted.
     """
-    if config is None:
-        config = load_config()
+    try:
+        if config is None:
+            config = load_config()
 
-    if isinstance(target_date, str):
-        target_date = datetime.strptime(target_date, "%Y-%m-%d").date()
-    elif isinstance(target_date, datetime):
-        target_date = target_date.date()
+        if isinstance(target_date, str):
+            target_date = datetime.strptime(target_date, "%Y-%m-%d").date()
+        elif isinstance(target_date, datetime):
+            target_date = target_date.date()
 
-    logger.info(f"Starting targeted quant levels extraction for date: {target_date}")
+        logger.info(f"Starting targeted quant levels extraction for date: {target_date}")
 
-    # 1. Fetch matching posts for target_date
-    matching_posts = extract.fetch_posts_for_date(config, target_date)
-    if not matching_posts:
-        logger.info(f"No posts found for target_date: {target_date}.")
-        return 0
+        # 1. Fetch matching posts for target_date
+        matching_posts = extract.fetch_posts_for_date(config, target_date)
+        if not matching_posts:
+            logger.info(f"No posts found for target_date: {target_date}.")
+            return 0
 
-    # 2. Transform unstructured data to structured df
-    clean_df = transform.run(config, matching_posts)
-    if clean_df is None or clean_df.empty:
-        logger.info(f"Parsed DataFrame is empty for target_date: {target_date}. 0 rows upserted.")
-        return 0
+        # 2. Transform unstructured data to structured df
+        clean_df = transform.run(config, matching_posts)
+        if clean_df is None or clean_df.empty:
+            logger.info(f"Parsed DataFrame is empty for target_date: {target_date}. 0 rows upserted.")
+            return 0
 
-    # 3. Load df to postgres
-    load.run(config, "upsert", clean_df)
-    rows_upserted = len(clean_df)
-    logger.info(f"Target date {target_date} quant levels loaded successfully. {rows_upserted} rows upserted.")
-    return rows_upserted
+        # 3. Load df to postgres
+        load.run(config, "upsert", clean_df)
+        rows_upserted = len(clean_df)
+        logger.info(f"Target date {target_date} quant levels loaded successfully. {rows_upserted} rows upserted.")
+        return rows_upserted
+
+    except Exception as ex:
+        logger.error(f"Quant Levels target date extraction crash ({target_date}): {ex}", exc_info=True)
+        try:
+            from common_lib.connectors.alerts import dispatch_pipeline_failure_alert
+            dispatch_pipeline_failure_alert(
+                pipeline_name="Quant Levels",
+                error=ex,
+                session_date=target_date,
+                config=config
+            )
+        except Exception as alert_ex:
+            logger.error(f"Failed to dispatch failure alert: {alert_ex}")
+        raise

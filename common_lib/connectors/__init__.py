@@ -6,6 +6,7 @@ __all__ = [
     "postgres",
     "ibkr",
     "ntfy",
+    "alerts",
     "tradingedge_dexgex",
     "tradingedge_optionflow",
 ]
@@ -14,7 +15,7 @@ _MODULE_MAP = {
     "postgres": "common_lib.connectors.postgres",
     "ibkr": "common_lib.connectors.ibkr",
     "ntfy": "common_lib.connectors.nfty",
-    "nfty": "common_lib.connectors.nfty",
+    "alerts": "common_lib.connectors.alerts",
     "tradingedge_dexgex": "common_lib.connectors.tradingedge.dexgex",
     "tradingedge_optionflow": "common_lib.connectors.tradingedge.optionflow",
 }

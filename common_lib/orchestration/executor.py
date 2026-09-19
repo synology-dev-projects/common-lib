@@ -33,10 +33,15 @@ logger = logging.getLogger("quant.orchestration.executor")
 def _dispatch_ntfy_alert(topic: str, title: str, message: str, priority: int = 4) -> None:
     """Safely dispatches NTFY alerts without raising exceptions on network hiccups."""
     try:
-        from common_lib.config.main_config import load_config
+        from common_lib.connectors.alerts import resolve_ntfy_endpoint
         from common_lib.connectors import nfty
-        config = load_config()
-        endpoint = getattr(config, "ntfy_endpoint", "https://richntfynotifier.synology.me/alerts")
+        config = None
+        try:
+            from common_lib.config.main_config import load_config
+            config = load_config()
+        except Exception:
+            pass
+        endpoint = resolve_ntfy_endpoint(config)
         nfty.send_ntfy_notification(endpoint, topic, title, message, priority)
     except Exception as e:
         logger.warning(f"Failed to dispatch NTFY alert: {e}")
@@ -173,12 +178,17 @@ def execute_single_pipeline(
     record_run_failure(engine, run_id, err_msg, metadata={"duration_sec": duration, "attempts": max_retries})
     
     # Send NTFY Priority 5 alert on fatal pipeline crash
-    _dispatch_ntfy_alert(
-        topic="quant_alerts",
-        title=f"Pipeline Failed: {pipeline_name}",
-        message=f"Pipeline '{pipeline_name}' failed after {max_retries} attempts on {session_date}.\nError: {err_msg[:200]}",
-        priority=5
-    )
+    try:
+        from common_lib.connectors.alerts import dispatch_pipeline_failure_alert
+        dispatch_pipeline_failure_alert(
+            pipeline_name=pipeline_name,
+            error=err_msg,
+            session_date=session_date,
+            details=f"Failed after {max_retries} attempts.",
+            priority=5
+        )
+    except Exception as alert_ex:
+        logger.warning(f"Failed to dispatch failure alert: {alert_ex}")
 
     return {
         "pipeline_name": pipeline_name,
