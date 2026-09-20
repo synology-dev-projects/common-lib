@@ -1,4 +1,4 @@
-﻿"""
+"""
 Pipeline Registry and Declarative DAG Definitions.
 
 Provides dependency graph declaration, topological ordering via Python 3.9+
@@ -27,8 +27,7 @@ PIPELINE_DAG: Dict[str, Dict[str, Any]] = {
     },
     "gexdex_snapshot": {
         "upstream": ["unusual_option_flow"],
-        "runner": "quant-pwa.gateway.app.engine.snapshot_pipeline:run_snapshot_pipeline",
-        "fallback_runner": "gexdex-snapshot-pipeline.src.scripts.daily_snapshot:run_snapshot_pipeline",
+        "runner": "gexdex-snapshot-pipeline.src.scripts.daily_snapshot:run_pipeline",
         "description": "Computes daily GEX/DEX scorecard watchlist snapshot from session flow",
         "target_tables": ["gexdex_snapshot"],
         "timeout_sec": 600,
@@ -132,7 +131,14 @@ def resolve_runner(runner_spec: str | Callable) -> Callable:
 
     module_name, func_name = runner_spec.split(":", 1)
     try:
-        mod = importlib.import_module(module_name)
+        try:
+            mod = importlib.import_module(module_name)
+        except (ModuleNotFoundError, ImportError):
+            parts = module_name.split(".")
+            if "-" in parts[0]:
+                mod = importlib.import_module(".".join(parts[1:]))
+            else:
+                raise
         func = getattr(mod, func_name)
         if not callable(func):
             raise TypeError(f"Attribute '{func_name}' in module '{module_name}' is not callable.")
