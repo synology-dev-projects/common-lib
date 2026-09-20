@@ -27,7 +27,7 @@ PIPELINE_DAG: Dict[str, Dict[str, Any]] = {
     },
     "gexdex_snapshot": {
         "upstream": ["unusual_option_flow"],
-        "runner": "gexdex-snapshot-pipeline.src.scripts.daily_snapshot:run_pipeline",
+        "runner": "gexdex-snapshot-pipeline.src.scripts.daily_snapshot:run_snapshot_pipeline",
         "description": "Computes daily GEX/DEX scorecard watchlist snapshot from session flow",
         "target_tables": ["gexdex_snapshot"],
         "timeout_sec": 600,
