@@ -22,6 +22,7 @@ from common_lib.connectors.postgres import (
     get_unusual_flow,
     get_quant_levels,
     ensure_flow_indexes,
+    get_economic_events,
 )
 from common_lib.database.schemas import ensure_all_schemas
 
@@ -82,4 +83,5 @@ __all__ = [
     "get_unusual_flow",
     "get_quant_levels",
     "ensure_flow_indexes",
+    "get_economic_events",
 ]

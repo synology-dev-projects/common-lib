@@ -41,12 +41,13 @@ def sample_config():
 # ==============================================================================
 
 def test_schemas_contains_all_four_canonical_tables():
-    """Verifies SCHEMAS dictionary contains exactly the 4 required production tables."""
+    """Verifies SCHEMAS dictionary contains exactly the required production tables."""
     expected_tables = {
         "unusual_whales_flow_te",
         "quant_lvl_data_te",
         "ibkr_historical_te",
-        "chat_history"
+        "chat_history",
+        "economic_events"
     }
     assert set(SCHEMAS.keys()) == expected_tables
 
@@ -76,17 +77,17 @@ def test_schemas_ddl_specific_column_definitions():
     assert "idx_flow_symbol_date" in flow_ddl
 
     # quant_lvl_data_te
-    quant_ddl = SCHEMAS["quant_lvl_data_te"]
-    assert "symbol VARCHAR(16) NOT NULL" in quant_ddl
-    assert "datetime TIMESTAMP WITH TIME ZONE NOT NULL" in quant_ddl
-    assert "quant_level_type VARCHAR(32) NOT NULL" in quant_ddl
-    assert "price_level NUMERIC(10, 2) NOT NULL" in quant_ddl
-    assert "buy_zone_low NUMERIC(10, 2)" in quant_ddl
-    assert "buy_zone_high NUMERIC(10, 2)" in quant_ddl
-    assert "sell_zone_low NUMERIC(10, 2)" in quant_ddl
-    assert "sell_zone_high NUMERIC(10, 2)" in quant_ddl
-    assert "PRIMARY KEY (symbol, datetime, quant_level_type, price_level)" in quant_ddl
-    assert "idx_quant_lvl_symbol_dt" in quant_ddl
+    lvl_ddl = SCHEMAS["quant_lvl_data_te"]
+    assert "symbol VARCHAR(16) NOT NULL" in lvl_ddl
+    assert "datetime TIMESTAMP WITH TIME ZONE NOT NULL" in lvl_ddl
+    assert "quant_level_type VARCHAR(32) NOT NULL" in lvl_ddl
+    assert "price_level NUMERIC(10, 2) NOT NULL" in lvl_ddl
+    assert "buy_zone_low NUMERIC(10, 2)" in lvl_ddl
+    assert "buy_zone_high NUMERIC(10, 2)" in lvl_ddl
+    assert "sell_zone_low NUMERIC(10, 2)" in lvl_ddl
+    assert "sell_zone_high NUMERIC(10, 2)" in lvl_ddl
+    assert "PRIMARY KEY (symbol, datetime, quant_level_type, price_level)" in lvl_ddl
+    assert "idx_quant_lvl_symbol_dt" in lvl_ddl
 
     # ibkr_historical_te
     ibkr_ddl = SCHEMAS["ibkr_historical_te"]
@@ -112,13 +113,24 @@ def test_schemas_ddl_specific_column_definitions():
     assert "created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP" in chat_ddl
     assert "idx_chat_session_id" in chat_ddl
 
+    # economic_events
+    econ_ddl = SCHEMAS["economic_events"]
+    assert "event_id VARCHAR(64) NOT NULL" in econ_ddl
+    assert "event_timestamp TIMESTAMP WITH TIME ZONE NOT NULL" in econ_ddl
+    assert "country VARCHAR(8) NOT NULL" in econ_ddl
+    assert "title VARCHAR(256) NOT NULL" in econ_ddl
+    assert "impact_tier VARCHAR(16) NOT NULL" in econ_ddl
+    assert "PRIMARY KEY (event_id, event_timestamp)" in econ_ddl
+    assert "idx_econ_ts" in econ_ddl
+    assert "idx_econ_country_impact" in econ_ddl
+
 
 # ==============================================================================
 # 2. DDL EXECUTION & TRANSACTION VERIFICATION TESTS
 # ==============================================================================
 
 def test_ensure_all_schemas_executes_ddl_for_all_tables(mock_engine):
-    """Verifies ensure_all_schemas opens a transaction and executes DDL for all 4 tables."""
+    """Verifies ensure_all_schemas opens a transaction and executes DDL for all canonical tables."""
     engine, conn = mock_engine
 
     result = ensure_all_schemas(engine)
@@ -126,22 +138,23 @@ def test_ensure_all_schemas_executes_ddl_for_all_tables(mock_engine):
     # Verify transaction context was opened
     engine.begin.assert_called_once()
 
-    # Verify return dictionary contains all 4 verified statuses
+    # Verify return dictionary contains all verified statuses
     expected_result = {
         "unusual_whales_flow_te": "verified",
         "quant_lvl_data_te": "verified",
         "ibkr_historical_te": "verified",
-        "chat_history": "verified"
+        "chat_history": "verified",
+        "economic_events": "verified"
     }
     assert result == expected_result
 
-    # Total statements across 4 tables: each table has CREATE TABLE + CREATE INDEX (at least 8 statements)
-    assert conn.execute.call_count >= 8
+    # Total statements across tables: each table has CREATE TABLE + CREATE INDEX (at least 10 statements)
+    assert conn.execute.call_count >= 10
 
     # Extract all executed SQL strings
     executed_sqls = [str(call_args[0][0]) for call_args in conn.execute.call_args_list]
 
-    for table in ["unusual_whales_flow_te", "quant_lvl_data_te", "ibkr_historical_te", "chat_history"]:
+    for table in ["unusual_whales_flow_te", "quant_lvl_data_te", "ibkr_historical_te", "chat_history", "economic_events"]:
         assert any(f"CREATE TABLE IF NOT EXISTS {table}" in sql for sql in executed_sqls)
 
 
@@ -159,7 +172,8 @@ def test_ensure_all_schemas_idempotency(mock_engine):
         "unusual_whales_flow_te": "verified",
         "quant_lvl_data_te": "verified",
         "ibkr_historical_te": "verified",
-        "chat_history": "verified"
+        "chat_history": "verified",
+        "economic_events": "verified"
     }
     call_count_first_run = conn.execute.call_count
 
