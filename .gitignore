@@ -10,3 +10,4 @@ __pycache__/
 
 # Subagent Ephemeral Worktrees (DEPLOY-02)
 .worktrees/
+data/

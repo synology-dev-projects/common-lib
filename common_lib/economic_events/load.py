@@ -38,7 +38,30 @@ def get_economic_events_table(metadata: Optional[sa.MetaData] = None, table_name
 
 def ensure_economic_events_table(engine: sa.Engine, table_name: str = "economic_events") -> None:
     """Ensures table and indices exist in database idempotently."""
-    ensure_all_schemas(engine)
+    ddl = f"""
+    CREATE TABLE IF NOT EXISTS {table_name} (
+        event_id VARCHAR(64) NOT NULL,
+        event_timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
+        country VARCHAR(8) NOT NULL,
+        title VARCHAR(256) NOT NULL,
+        impact_tier VARCHAR(16) NOT NULL,
+        forecast VARCHAR(32),
+        previous VARCHAR(32),
+        actual VARCHAR(32),
+        synthetic_summary TEXT,
+        raw_payload JSONB,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (event_id, event_timestamp)
+    );
+    CREATE INDEX IF NOT EXISTS idx_econ_ts ON {table_name}(event_timestamp);
+    CREATE INDEX IF NOT EXISTS idx_econ_country_impact ON {table_name}(country, impact_tier);
+    """
+    with engine.begin() as conn:
+        for stmt in ddl.strip().split(";"):
+            clean_stmt = stmt.strip()
+            if clean_stmt:
+                conn.execute(sa.text(clean_stmt))
 
 
 def load_events_to_postgres(

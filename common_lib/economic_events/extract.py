@@ -109,7 +109,10 @@ def fetch_calendar_feed(
                         raise ValueError(f"Expected JSON list, got {type(data)}")
         except urllib.error.HTTPError as he:
             last_error = he
-            if he.code == 429 or 500 <= he.code < 600:
+            if he.code == 404:
+                logger.info(f"Feed {url} returned 404 Not Found (feed not published yet).")
+                raise FileNotFoundError(f"Feed not found: {url}") from he
+            elif he.code == 429 or 500 <= he.code < 600:
                 sleep_secs = (backoff_factor ** attempt) + random.uniform(0.5, 1.5)
                 logger.warning(f"HTTP {he.code} on attempt {attempt}. Retrying in {sleep_secs:.2f}s...")
                 time.sleep(sleep_secs)
@@ -137,7 +140,7 @@ def extract_all_upcoming_events(
     cache_dir: Optional[str] = None,
     force_refresh: bool = False
 ) -> List[Dict[str, Any]]:
-    """Extracts events from thisweek calendar feed."""
+    """Extracts events from calendar feeds."""
     all_raw: List[Dict[str, Any]] = []
     try:
         events_thisweek = fetch_calendar_feed(FEED_THIS_WEEK_URL, cache_dir=cache_dir, force_refresh=force_refresh)
@@ -148,7 +151,7 @@ def extract_all_upcoming_events(
     try:
         events_nextweek = fetch_calendar_feed(FEED_NEXT_WEEK_URL, cache_dir=cache_dir, force_refresh=force_refresh)
         all_raw.extend(events_nextweek)
-    except Exception as e:
-        logger.debug(f"Nextweek feed not available (expected if not published): {e}")
+    except (FileNotFoundError, Exception) as e:
+        logger.debug(f"Nextweek feed not available: {e}")
 
     return all_raw
