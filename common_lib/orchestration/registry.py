@@ -5,7 +5,9 @@ Provides dependency graph declaration, topological ordering via Python 3.9+
 built-in graphlib.TopologicalSorter, and transitive downstream resolution.
 """
 
+import sys
 import importlib
+from pathlib import Path
 from graphlib import TopologicalSorter, CycleError
 from typing import Dict, List, Any, Callable, Optional
 
@@ -136,6 +138,16 @@ def resolve_runner(runner_spec: str | Callable) -> Callable:
         except (ModuleNotFoundError, ImportError):
             parts = module_name.split(".")
             if "-" in parts[0]:
+                repo_folder = parts[0]
+                candidate_paths = [
+                    Path("/app") / repo_folder,
+                    Path(__file__).resolve().parent.parent.parent.parent / repo_folder,
+                    Path.cwd() / repo_folder,
+                    Path.cwd().parent / repo_folder,
+                ]
+                for cp in candidate_paths:
+                    if cp.is_dir() and str(cp) not in sys.path:
+                        sys.path.insert(0, str(cp))
                 mod = importlib.import_module(".".join(parts[1:]))
             else:
                 raise
