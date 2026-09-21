@@ -542,3 +542,69 @@ def ensure_flow_indexes(config: MainConfig) -> None:
     except Exception as ex:
         logger.warning(f"Could not create flow indices (table may not exist yet): {ex}")
 
+
+def get_economic_events(
+    config_or_engine: Union[MainConfig, sa.Engine],
+    start_date: Optional[Union[date, datetime, str]] = None,
+    end_date: Optional[Union[date, datetime, str]] = None,
+    country: Optional[Union[str, List[str]]] = None,
+    min_impact: Optional[str] = "Medium",
+    limit: int = 100
+) -> pd.DataFrame:
+    """
+    Queries economic_events table for macroeconomic events with optional date range,
+    country, and impact tier filtering.
+    """
+    if isinstance(config_or_engine, sa.Engine):
+        engine = config_or_engine
+    else:
+        engine = _get_postgres_engine(config_or_engine)
+
+    conditions = []
+    params: dict[str, Any] = {"limit": limit}
+
+    if start_date is not None:
+        conditions.append("event_timestamp >= :start_date")
+        params["start_date"] = pd.to_datetime(start_date)
+
+    if end_date is not None:
+        conditions.append("event_timestamp <= :end_date")
+        params["end_date"] = pd.to_datetime(end_date)
+
+    if country is not None:
+        if isinstance(country, str):
+            clean_country = [country.strip().upper()]
+        else:
+            clean_country = [c.strip().upper() for c in country if c.strip()]
+        if clean_country:
+            conditions.append("country = ANY(:countries)")
+            params["countries"] = clean_country
+
+    if min_impact:
+        impact_clean = min_impact.strip().capitalize()
+        if impact_clean == "High":
+            conditions.append("impact_tier = 'High'")
+        elif impact_clean == "Medium":
+            conditions.append("impact_tier IN ('High', 'Medium')")
+        elif impact_clean == "Low":
+            conditions.append("impact_tier IN ('High', 'Medium', 'Low')")
+
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    query = f"""
+        SELECT event_id, event_timestamp, country, title, impact_tier,
+               forecast, previous, actual, synthetic_summary, raw_payload
+        FROM economic_events
+        {where_clause}
+        ORDER BY event_timestamp ASC
+        LIMIT :limit
+    """
+
+    try:
+        df = pd.read_sql_query(sa.text(query), engine, params=params)
+        df.columns = df.columns.str.upper()
+        return df
+    except Exception as ex:
+        logger.warning(f"Error querying economic_events from PostgreSQL: {ex}")
+        return pd.DataFrame()
+
+

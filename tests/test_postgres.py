@@ -429,3 +429,49 @@ def test_get_unusual_flow_default_none_queries_max_date(sample_config):
         assert len(res) == 2
 
 
+def test_get_economic_events(sample_config):
+    """Verifies get_economic_events properly constructs SQL query and handles filters."""
+    mock_engine = MagicMock(spec=sa.Engine)
+    mock_df = pd.DataFrame([
+        {
+            "event_id": "e1",
+            "event_timestamp": "2026-09-23 08:30:00+00",
+            "country": "USD",
+            "title": "Core CPI m/m",
+            "impact_tier": "High",
+            "forecast": "0.3%",
+            "previous": "0.2%",
+            "actual": "0.3%",
+            "synthetic_summary": "USD Core CPI m/m event",
+            "raw_payload": "{}"
+        }
+    ])
+
+    with patch("common_lib.connectors.postgres._get_postgres_engine", return_value=mock_engine), \
+         patch("pandas.read_sql_query", return_value=mock_df) as mock_read_sql:
+
+        res = pg_conn.get_economic_events(
+            config_or_engine=sample_config,
+            start_date="2026-09-20",
+            end_date="2026-09-25",
+            country=["USD"],
+            min_impact="High",
+            limit=25
+        )
+
+        assert mock_read_sql.call_count == 1
+        query_arg = str(mock_read_sql.call_args[0][0])
+        params_arg = mock_read_sql.call_args[1]["params"]
+
+        assert "FROM economic_events" in query_arg
+        assert "event_timestamp >= :start_date" in query_arg
+        assert "event_timestamp <= :end_date" in query_arg
+        assert "country = ANY(:countries)" in query_arg
+        assert "impact_tier = 'High'" in query_arg
+        assert params_arg["countries"] == ["USD"]
+        assert params_arg["limit"] == 25
+        assert "TITLE" in res.columns
+        assert len(res) == 1
+
+
+

@@ -73,6 +73,25 @@ CREATE TABLE IF NOT EXISTS chat_history (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_chat_session_id ON chat_history(session_id);
+""",
+    "economic_events": """
+CREATE TABLE IF NOT EXISTS economic_events (
+    event_id VARCHAR(64) NOT NULL,
+    event_timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
+    country VARCHAR(8) NOT NULL,
+    title VARCHAR(256) NOT NULL,
+    impact_tier VARCHAR(16) NOT NULL,
+    forecast VARCHAR(32),
+    previous VARCHAR(32),
+    actual VARCHAR(32),
+    synthetic_summary TEXT,
+    raw_payload JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (event_id, event_timestamp)
+);
+CREATE INDEX IF NOT EXISTS idx_econ_ts ON economic_events(event_timestamp);
+CREATE INDEX IF NOT EXISTS idx_econ_country_impact ON economic_events(country, impact_tier);
 """
 }
 
