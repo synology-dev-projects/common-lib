@@ -30,30 +30,25 @@ TICKER_CURRENCY_MAP = {
     "EEM": "USD", "EFA": "USD",
 }
 
-# Thematic macro sensitivity presets for query expansion
-TICKER_THEMATIC_PROFILES = {
-    "SOFI": "variable-rate debt financing, personal loan securitization, fed funds rate cuts, net interest margin, bank deposit costs",
-    "UPST": "consumer credit default delinquencies, prime borrowing rates, fed liquidity, loan volume demand",
-    "PLTR": "defense spending budgets, government procurement, treasury debt ceiling, interest rate discounting",
-    "NVDA": "semiconductor export trade policy, artificial intelligence capital expenditure, tech valuation multiple, bond yields",
-    "AMD": "semiconductor capital expenditure, cloud computing demand, treasury yields, tech valuation multiple",
-    "TSLA": "auto loan financing rates, consumer vehicle demand, retail interest rates, discretionary spending",
-    "COIN": "monetary policy liquidity, regulatory oversight, interest rates, dollar index strength",
-    "SPY": "broad market monetary policy, FOMC rate decisions, core CPI inflation, non-farm payrolls, GDP growth",
-    "QQQ": "nasdaq 100 duration risk, 10-year treasury yield, tech multiples, core inflation, fed dot plot",
-    "IWM": "small cap debt refinancing, regional bank credit availability, domestic US economic growth, interest rate cuts",
-}
-
+# Deprecated: Static profiles replaced by dynamic macro sensitivities
+TICKER_THEMATIC_PROFILES = {}
 
 def get_ticker_currency(ticker: str) -> str:
     """Resolves primary currency for ticker, defaulting to USD."""
     return TICKER_CURRENCY_MAP.get(ticker.upper(), "USD")
 
 
-def get_thematic_expansion(ticker: str) -> str:
-    """Returns preset thematic risk keywords for ticker if available."""
+def get_thematic_expansion(ticker: str, engine: Optional[sa.Engine] = None) -> str:
+    """Returns dynamic thematic risk keywords for ticker."""
+    from common_lib.economic_events.sensitivities import get_or_compute_sensitivity
     clean = ticker.upper()
-    return TICKER_THEMATIC_PROFILES.get(clean, f"{clean} macro catalysts, monetary policy, economic data")
+    try:
+        sens = get_or_compute_sensitivity(engine, clean)
+        if sens and sens.get("query_expansion"):
+            return sens["query_expansion"]
+    except Exception as e:
+        logger.warning(f"Failed to compute sensitivity for {clean}: {e}")
+    return f"{clean} macro catalysts, monetary policy, economic data"
 
 
 def retrieve_relevant_events(
@@ -76,7 +71,7 @@ def retrieve_relevant_events(
     target_country = country or get_ticker_currency(clean_ticker)
 
     # 1. Determine query text
-    query_text = semantic_query or get_thematic_expansion(clean_ticker)
+    query_text = semantic_query or get_thematic_expansion(clean_ticker, engine)
 
     # 2. Check if vector search is possible
     query_vector: Optional[List[float]] = None
