@@ -14,7 +14,7 @@ import sqlalchemy as sa
 
 logger = logging.getLogger("quant.common_lib.economic_events.embeddings")
 
-DEFAULT_EMBEDDING_MODEL = "text-embedding-004"
+DEFAULT_EMBEDDING_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
 DEFAULT_BATCH_SIZE = 100
 
 
@@ -30,6 +30,7 @@ def generate_embeddings_http(
     texts: List[str],
     api_key: str,
     model: str = DEFAULT_EMBEDDING_MODEL,
+    dimensions: Optional[int] = 768,
     max_retries: int = 3,
     backoff_factor: float = 1.5
 ) -> List[List[float]]:
@@ -41,7 +42,16 @@ def generate_embeddings_http(
         return []
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:batchEmbedContents?key={api_key}"
-    requests_payload = [{"model": f"models/{model}", "content": {"parts": [{"text": t}]}} for t in texts]
+    requests_payload = []
+    for t in texts:
+        req_item: Dict[str, Any] = {
+            "model": f"models/{model}",
+            "content": {"parts": [{"text": t}]}
+        }
+        if dimensions:
+            req_item["outputDimensionality"] = dimensions
+        requests_payload.append(req_item)
+
     body = json.dumps({"requests": requests_payload}).encode("utf-8")
     headers = {"Content-Type": "application/json"}
 
