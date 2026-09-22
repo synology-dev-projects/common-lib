@@ -8,6 +8,8 @@ from pathlib import Path
 def _get_env_file_path() -> str:
     pkg_dir = Path(__file__).resolve().parent.parent
     candidates = [
+        pkg_dir.parent.parent.parent.parent / "common_config" / ".env",
+        pkg_dir.parent.parent.parent / "common_config" / ".env",
         pkg_dir.parent.parent / "common_config" / ".env",
         pkg_dir.parent / "common_config" / ".env",
         Path("/app/common_config/.env")
@@ -15,7 +17,7 @@ def _get_env_file_path() -> str:
     for candidate in candidates:
         if candidate.exists():
             return str(candidate)
-    return str(candidates[0])
+    return str(candidates[2])
 
 class MainConfig(BaseSettings):
     """

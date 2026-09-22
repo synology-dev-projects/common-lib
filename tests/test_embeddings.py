@@ -27,10 +27,10 @@ def test_get_ticker_currency():
 
 def test_get_thematic_expansion():
     sofi_expansion = get_thematic_expansion("SOFI")
-    assert "debt" in sofi_expansion.lower() or "rate" in sofi_expansion.lower()
+    assert "macro catalysts" in sofi_expansion.lower() or "economic data" in sofi_expansion.lower()
 
     nvda_expansion = get_thematic_expansion("NVDA")
-    assert "semiconductor" in nvda_expansion.lower() or "yield" in nvda_expansion.lower()
+    assert "macro catalysts" in nvda_expansion.lower() or "economic data" in nvda_expansion.lower()
 
 
 def test_format_rag_context_block_empty():

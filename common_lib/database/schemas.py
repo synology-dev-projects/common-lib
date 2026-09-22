@@ -86,33 +86,26 @@ CREATE TABLE IF NOT EXISTS economic_events (
     actual VARCHAR(32),
     synthetic_summary TEXT,
     raw_payload JSONB,
-    embedding VECTOR(768),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (event_id, event_timestamp)
 );
 CREATE INDEX IF NOT EXISTS idx_econ_ts ON economic_events(event_timestamp);
 CREATE INDEX IF NOT EXISTS idx_econ_country_impact ON economic_events(country, impact_tier);
-CREATE INDEX IF NOT EXISTS idx_econ_embedding ON economic_events USING hnsw (embedding vector_cosine_ops);
 """,
-    "company_macro_sensitivities": """
-CREATE TABLE IF NOT EXISTS company_macro_sensitivities (
+    "ticker_semantic_profiles": """
+CREATE TABLE IF NOT EXISTS ticker_semantic_profiles (
     ticker VARCHAR(16) PRIMARY KEY,
-    beta_rates NUMERIC(8, 4),
-    beta_oil NUMERIC(8, 4),
-    beta_usd NUMERIC(8, 4),
-    beta_market NUMERIC(8, 4),
-    debt_to_equity NUMERIC(10, 4),
-    interest_coverage NUMERIC(10, 4),
-    net_debt_ebitda NUMERIC(10, 4),
-    thematic_tags TEXT[],
-    primary_catalysts TEXT[],
-    query_expansion TEXT,
+    cik VARCHAR(12),
+    company_name VARCHAR(128),
+    sector VARCHAR(64),
+    business_summary TEXT NOT NULL,
+    embedding VECTOR(768),
     last_filing_date DATE,
-    last_calculated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_macro_sens_ticker ON company_macro_sensitivities(ticker);
+CREATE INDEX IF NOT EXISTS idx_ticker_semantic_emb ON ticker_semantic_profiles USING hnsw (embedding vector_cosine_ops);
 """
 }
 
