@@ -48,7 +48,7 @@ def test_schemas_contains_all_four_canonical_tables():
         "ibkr_historical_te",
         "chat_history",
         "economic_events",
-        "company_macro_sensitivities"
+        "ticker_semantic_profiles"
     }
     assert set(SCHEMAS.keys()) == expected_tables
 
@@ -125,6 +125,16 @@ def test_schemas_ddl_specific_column_definitions():
     assert "idx_econ_ts" in econ_ddl
     assert "idx_econ_country_impact" in econ_ddl
 
+    # ticker_semantic_profiles
+    semantic_ddl = SCHEMAS["ticker_semantic_profiles"]
+    assert "ticker VARCHAR(16) PRIMARY KEY" in semantic_ddl
+    assert "cik VARCHAR(12)" in semantic_ddl
+    assert "company_name VARCHAR(128)" in semantic_ddl
+    assert "sector VARCHAR(64)" in semantic_ddl
+    assert "business_summary TEXT NOT NULL" in semantic_ddl
+    assert "embedding VECTOR(768)" in semantic_ddl
+    assert "idx_ticker_semantic_emb" in semantic_ddl
+
 
 # ==============================================================================
 # 2. DDL EXECUTION & TRANSACTION VERIFICATION TESTS
@@ -146,7 +156,7 @@ def test_ensure_all_schemas_executes_ddl_for_all_tables(mock_engine):
         "ibkr_historical_te": "verified",
         "chat_history": "verified",
         "economic_events": "verified",
-        "company_macro_sensitivities": "verified"
+        "ticker_semantic_profiles": "verified"
     }
     assert result == expected_result
 
@@ -156,7 +166,7 @@ def test_ensure_all_schemas_executes_ddl_for_all_tables(mock_engine):
     # Extract all executed SQL strings
     executed_sqls = [str(call_args[0][0]) for call_args in conn.execute.call_args_list]
 
-    for table in ["unusual_whales_flow_te", "quant_lvl_data_te", "ibkr_historical_te", "chat_history", "economic_events", "company_macro_sensitivities"]:
+    for table in ["unusual_whales_flow_te", "quant_lvl_data_te", "ibkr_historical_te", "chat_history", "economic_events", "ticker_semantic_profiles"]:
         assert any(f"CREATE TABLE IF NOT EXISTS {table}" in sql for sql in executed_sqls)
 
 
@@ -176,7 +186,7 @@ def test_ensure_all_schemas_idempotency(mock_engine):
         "ibkr_historical_te": "verified",
         "chat_history": "verified",
         "economic_events": "verified",
-        "company_macro_sensitivities": "verified"
+        "ticker_semantic_profiles": "verified"
     }
     call_count_first_run = conn.execute.call_count
 

@@ -27,8 +27,6 @@ def get_economic_events_table(metadata: Optional[sa.MetaData] = None, table_name
     if table_name in meta.tables:
         return meta.tables[table_name]
 
-    embedding_col = sa.Column("embedding", Vector(768)) if HAS_PGVECTOR else sa.Column("embedding", sa.NullType)
-
     return sa.Table(
         table_name, meta,
         sa.Column("event_id", sa.String(64), primary_key=True),
@@ -41,7 +39,6 @@ def get_economic_events_table(metadata: Optional[sa.MetaData] = None, table_name
         sa.Column("actual", sa.String(32)),
         sa.Column("synthetic_summary", sa.Text),
         sa.Column("raw_payload", sa.JSON),
-        embedding_col,
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP")),
     )
@@ -49,7 +46,6 @@ def get_economic_events_table(metadata: Optional[sa.MetaData] = None, table_name
 
 def ensure_economic_events_table(engine: sa.Engine, table_name: str = "economic_events") -> None:
     """Ensures table and indices exist in database idempotently."""
-    ensure_pgvector_extension(engine)
     ddl = f"""
     CREATE TABLE IF NOT EXISTS {table_name} (
         event_id VARCHAR(64) NOT NULL,
@@ -68,8 +64,6 @@ def ensure_economic_events_table(engine: sa.Engine, table_name: str = "economic_
     );
     CREATE INDEX IF NOT EXISTS idx_econ_ts ON {table_name}(event_timestamp);
     CREATE INDEX IF NOT EXISTS idx_econ_country_impact ON {table_name}(country, impact_tier);
-    ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS embedding VECTOR(768);
-    CREATE INDEX IF NOT EXISTS idx_econ_embedding ON {table_name} USING hnsw (embedding vector_cosine_ops);
     """
     with engine.begin() as conn:
         for stmt in ddl.strip().split(";"):
