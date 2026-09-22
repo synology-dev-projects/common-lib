@@ -86,14 +86,28 @@ CREATE TABLE IF NOT EXISTS economic_events (
     actual VARCHAR(32),
     synthetic_summary TEXT,
     raw_payload JSONB,
+    embedding VECTOR(768),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (event_id, event_timestamp)
 );
 CREATE INDEX IF NOT EXISTS idx_econ_ts ON economic_events(event_timestamp);
 CREATE INDEX IF NOT EXISTS idx_econ_country_impact ON economic_events(country, impact_tier);
+CREATE INDEX IF NOT EXISTS idx_econ_embedding ON economic_events USING hnsw (embedding vector_cosine_ops);
 """
 }
+
+
+def ensure_pgvector_extension(engine: sa.Engine) -> bool:
+    """Ensures pgvector extension is enabled in the database idempotently."""
+    try:
+        with engine.begin() as conn:
+            conn.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector;"))
+        logger.info("pgvector extension verified/enabled successfully.")
+        return True
+    except Exception as e:
+        logger.warning(f"Could not enable pgvector extension: {e}")
+        return False
 
 
 # ==============================================================================
