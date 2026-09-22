@@ -215,56 +215,58 @@ def get_or_compute_sensitivity(engine: Optional[sa.Engine], ticker: str, force_r
         return data
     
     # Upsert
-    with engine.begin() as conn:
-        try:
-            # Postgres specific upsert
-            stmt = text("""
-                INSERT INTO company_macro_sensitivities (
-                    ticker, beta_rates, beta_oil, beta_usd, beta_market,
-                    debt_to_equity, interest_coverage, net_debt_ebitda,
-                    thematic_tags, primary_catalysts, query_expansion,
-                    last_filing_date, last_calculated_at
-                ) VALUES (
-                    :ticker, :beta_rates, :beta_oil, :beta_usd, :beta_market,
-                    :debt_to_equity, :interest_coverage, :net_debt_ebitda,
-                    :thematic_tags, :primary_catalysts, :query_expansion,
-                    :last_filing_date, :last_calculated_at
-                )
-                ON CONFLICT (ticker) DO UPDATE SET
-                    beta_rates = EXCLUDED.beta_rates,
-                    beta_oil = EXCLUDED.beta_oil,
-                    beta_usd = EXCLUDED.beta_usd,
-                    beta_market = EXCLUDED.beta_market,
-                    debt_to_equity = EXCLUDED.debt_to_equity,
-                    interest_coverage = EXCLUDED.interest_coverage,
-                    net_debt_ebitda = EXCLUDED.net_debt_ebitda,
-                    thematic_tags = EXCLUDED.thematic_tags,
-                    primary_catalysts = EXCLUDED.primary_catalysts,
-                    query_expansion = EXCLUDED.query_expansion,
-                    last_filing_date = EXCLUDED.last_filing_date,
-                    last_calculated_at = EXCLUDED.last_calculated_at
-            """)
-            conn.execute(stmt, data)
-        except Exception: # SQLite fallback for tests or other dialects
-            # naive sqlite fallback
-            conn.execute(text("DELETE FROM company_macro_sensitivities WHERE ticker = :ticker"), {"ticker": clean_ticker})
-            stmt = text("""
-                INSERT INTO company_macro_sensitivities (
-                    ticker, beta_rates, beta_oil, beta_usd, beta_market,
-                    debt_to_equity, interest_coverage, net_debt_ebitda,
-                    thematic_tags, primary_catalysts, query_expansion,
-                    last_filing_date, last_calculated_at
-                ) VALUES (
-                    :ticker, :beta_rates, :beta_oil, :beta_usd, :beta_market,
-                    :debt_to_equity, :interest_coverage, :net_debt_ebitda,
-                    :thematic_tags_str, :primary_catalysts_str, :query_expansion,
-                    :last_filing_date, :last_calculated_at
-                )
-            """)
-            # SQLite doesn't natively support arrays, store as JSON strings in tests
-            data_sqlite = data.copy()
-            data_sqlite["thematic_tags_str"] = json.dumps(data["thematic_tags"])
-            data_sqlite["primary_catalysts_str"] = json.dumps(data["primary_catalysts"])
-            conn.execute(stmt, data_sqlite)
-            
+    try:
+        dialect_name = getattr(getattr(engine, "dialect", None), "name", "postgresql")
+        if dialect_name == "sqlite":
+            with engine.begin() as conn:
+                conn.execute(text("DELETE FROM company_macro_sensitivities WHERE ticker = :ticker"), {"ticker": clean_ticker})
+                stmt = text("""
+                    INSERT INTO company_macro_sensitivities (
+                        ticker, beta_rates, beta_oil, beta_usd, beta_market,
+                        debt_to_equity, interest_coverage, net_debt_ebitda,
+                        thematic_tags, primary_catalysts, query_expansion,
+                        last_filing_date, last_calculated_at
+                    ) VALUES (
+                        :ticker, :beta_rates, :beta_oil, :beta_usd, :beta_market,
+                        :debt_to_equity, :interest_coverage, :net_debt_ebitda,
+                        :thematic_tags_str, :primary_catalysts_str, :query_expansion,
+                        :last_filing_date, :last_calculated_at
+                    )
+                """)
+                data_sqlite = data.copy()
+                data_sqlite["thematic_tags_str"] = json.dumps(data["thematic_tags"])
+                data_sqlite["primary_catalysts_str"] = json.dumps(data["primary_catalysts"])
+                conn.execute(stmt, data_sqlite)
+        else:
+            with engine.begin() as conn:
+                stmt = text("""
+                    INSERT INTO company_macro_sensitivities (
+                        ticker, beta_rates, beta_oil, beta_usd, beta_market,
+                        debt_to_equity, interest_coverage, net_debt_ebitda,
+                        thematic_tags, primary_catalysts, query_expansion,
+                        last_filing_date, last_calculated_at
+                    ) VALUES (
+                        :ticker, :beta_rates, :beta_oil, :beta_usd, :beta_market,
+                        :debt_to_equity, :interest_coverage, :net_debt_ebitda,
+                        :thematic_tags::text[], :primary_catalysts::text[], :query_expansion,
+                        :last_filing_date, :last_calculated_at
+                    )
+                    ON CONFLICT (ticker) DO UPDATE SET
+                        beta_rates = EXCLUDED.beta_rates,
+                        beta_oil = EXCLUDED.beta_oil,
+                        beta_usd = EXCLUDED.beta_usd,
+                        beta_market = EXCLUDED.beta_market,
+                        debt_to_equity = EXCLUDED.debt_to_equity,
+                        interest_coverage = EXCLUDED.interest_coverage,
+                        net_debt_ebitda = EXCLUDED.net_debt_ebitda,
+                        thematic_tags = EXCLUDED.thematic_tags,
+                        primary_catalysts = EXCLUDED.primary_catalysts,
+                        query_expansion = EXCLUDED.query_expansion,
+                        last_filing_date = EXCLUDED.last_filing_date,
+                        last_calculated_at = EXCLUDED.last_calculated_at
+                """)
+                conn.execute(stmt, data)
+    except Exception as e:
+        logger.warning(f"Failed to upsert sensitivity into DB for {clean_ticker}: {e}")
+
     return data
