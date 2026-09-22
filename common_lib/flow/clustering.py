@@ -146,8 +146,88 @@ CORE_10K_SUMMARIES = {
             "Its performance is heavily weighted toward high-growth technology, consumer discretionary, and communication services companies, "
             "making it sensitive to long-term discount rates and enterprise technology investment."
         )
+    },
+    "AAPL": {
+        "company_name": "Apple Inc.",
+        "cik": "0000320193",
+        "sector": "Consumer Electronics & Mega-Cap Tech",
+        "business_summary": "Apple designs, manufactures, and markets smartphones, personal computers, tablets, wearables, and cloud services."
+    },
+    "MSFT": {
+        "company_name": "Microsoft Corporation",
+        "cik": "0000789019",
+        "sector": "Enterprise Software & Cloud",
+        "business_summary": "Microsoft develops enterprise software platforms, Azure cloud computing, productivity suites, and enterprise AI."
+    },
+    "AMZN": {
+        "company_name": "Amazon.com, Inc.",
+        "cik": "0001018724",
+        "sector": "E-Commerce & Cloud Infrastructure",
+        "business_summary": "Amazon operates global retail e-commerce marketplaces and Amazon Web Services (AWS) hyperscale cloud infrastructure."
+    },
+    "GOOG": {
+        "company_name": "Alphabet Inc.",
+        "cik": "0001652044",
+        "sector": "Digital Advertising & AI Platforms",
+        "business_summary": "Alphabet operates Google Search, YouTube, Google Cloud, Android, and enterprise AI foundation models."
+    },
+    "GOOGL": {
+        "company_name": "Alphabet Inc.",
+        "cik": "0001652044",
+        "sector": "Digital Advertising & AI Platforms",
+        "business_summary": "Alphabet operates Google Search, YouTube, Google Cloud, Android, and enterprise AI foundation models."
+    },
+    "META": {
+        "company_name": "Meta Platforms, Inc.",
+        "cik": "0001326801",
+        "sector": "Social Media & AI Platforms",
+        "business_summary": "Meta develops social media applications, digital advertising platforms, and artificial intelligence hardware/infrastructure."
+    },
+    "AVGO": {
+        "company_name": "Broadcom Inc.",
+        "cik": "0001730168",
+        "sector": "Semiconductors & Networking",
+        "business_summary": "Broadcom designs and develops complex semiconductor devices and mission-critical enterprise infrastructure software."
+    },
+    "MRVL": {
+        "company_name": "Marvell Technology, Inc.",
+        "cik": "0001835632",
+        "sector": "Semiconductors & Data Infrastructure",
+        "business_summary": "Marvell develops data infrastructure semiconductor solutions spanning computing, networking, and custom ASIC accelerators."
+    },
+    "MU": {
+        "company_name": "Micron Technology, Inc.",
+        "cik": "0000723125",
+        "sector": "Semiconductors & Memory",
+        "business_summary": "Micron manufactures advanced semiconductor memory and storage solutions including high-bandwidth memory (HBM), DRAM, and NAND."
+    },
+    "INTC": {
+        "company_name": "Intel Corporation",
+        "cik": "0000050863",
+        "sector": "Semiconductors & Foundry",
+        "business_summary": "Intel designs central processing units, microprocessors, and semiconductor manufacturing and foundry services."
+    },
+    "CRWD": {
+        "company_name": "CrowdStrike Holdings, Inc.",
+        "cik": "0001535527",
+        "sector": "Cybersecurity & Cloud Protection",
+        "business_summary": "CrowdStrike provides cloud-native endpoint security, threat intelligence, and enterprise cyber defense software."
+    },
+    "BE": {
+        "company_name": "Bloom Energy Corporation",
+        "cik": "0001664703",
+        "sector": "Clean Energy & Power Infrastructure",
+        "business_summary": "Bloom Energy manufactures solid oxide fuel cell systems providing on-site clean baseload electricity for enterprise data centers."
+    },
+    "SNDK": {
+        "company_name": "SanDisk Corporation",
+        "cik": "0001000180",
+        "sector": "Memory & Flash Storage",
+        "business_summary": "SanDisk develops flash memory cards, USB drives, solid state drives, and digital data storage hardware."
     }
 }
+
+FALLBACK_SEED_PROFILES = CORE_10K_SUMMARIES
 
 
 def cosine_distance(vec_a: List[float], vec_b: List[float]) -> float:
@@ -468,6 +548,8 @@ def cluster_thematic_flow(
             sym = str(pr[0]).upper()
             c_name = str(pr[1])
             sector = str(pr[2])
+            if (not sector or sector in ("Public Equities", "Thematic Equities", "None")) and sym in FALLBACK_SEED_PROFILES:
+                sector = FALLBACK_SEED_PROFILES[sym].get("sector", sector)
             emb = pr[3]
             if isinstance(emb, str):
                 try:
@@ -544,8 +626,12 @@ def cluster_thematic_flow(
         net_sentiment = "BULLISH" if total_call_prem >= total_put_prem else "BEARISH"
 
         # Derive representative theme title from dominant sector
-        sectors = [meta_map.get(t, {}).get("sector", "Thematic Equities") for t in comp]
-        dominant_sector = max(set(sectors), key=sectors.count)
+        sectors = [meta_map.get(t, {}).get("sector") for t in comp]
+        valid_sectors = [
+            s for s in sectors
+            if s and s not in ("Public Equities", "Thematic Equities", "None", "")
+        ]
+        dominant_sector = max(set(valid_sectors), key=valid_sectors.count) if valid_sectors else "Thematic Technology & Growth"
         theme_title = f"{dominant_sector} Rotation ({', '.join(comp)})"
 
         ticker_items = []
