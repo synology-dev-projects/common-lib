@@ -94,6 +94,25 @@ CREATE TABLE IF NOT EXISTS economic_events (
 CREATE INDEX IF NOT EXISTS idx_econ_ts ON economic_events(event_timestamp);
 CREATE INDEX IF NOT EXISTS idx_econ_country_impact ON economic_events(country, impact_tier);
 CREATE INDEX IF NOT EXISTS idx_econ_embedding ON economic_events USING hnsw (embedding vector_cosine_ops);
+""",
+    "company_macro_sensitivities": """
+CREATE TABLE IF NOT EXISTS company_macro_sensitivities (
+    ticker VARCHAR(16) PRIMARY KEY,
+    beta_rates NUMERIC(8, 4),
+    beta_oil NUMERIC(8, 4),
+    beta_usd NUMERIC(8, 4),
+    beta_market NUMERIC(8, 4),
+    debt_to_equity NUMERIC(10, 4),
+    interest_coverage NUMERIC(10, 4),
+    net_debt_ebitda NUMERIC(10, 4),
+    thematic_tags TEXT[],
+    primary_catalysts TEXT[],
+    query_expansion TEXT,
+    last_filing_date DATE,
+    last_calculated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_macro_sens_ticker ON company_macro_sensitivities(ticker);
 """
 }
 

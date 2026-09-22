@@ -47,7 +47,8 @@ def test_schemas_contains_all_four_canonical_tables():
         "quant_lvl_data_te",
         "ibkr_historical_te",
         "chat_history",
-        "economic_events"
+        "economic_events",
+        "company_macro_sensitivities"
     }
     assert set(SCHEMAS.keys()) == expected_tables
 
@@ -144,7 +145,8 @@ def test_ensure_all_schemas_executes_ddl_for_all_tables(mock_engine):
         "quant_lvl_data_te": "verified",
         "ibkr_historical_te": "verified",
         "chat_history": "verified",
-        "economic_events": "verified"
+        "economic_events": "verified",
+        "company_macro_sensitivities": "verified"
     }
     assert result == expected_result
 
@@ -154,7 +156,7 @@ def test_ensure_all_schemas_executes_ddl_for_all_tables(mock_engine):
     # Extract all executed SQL strings
     executed_sqls = [str(call_args[0][0]) for call_args in conn.execute.call_args_list]
 
-    for table in ["unusual_whales_flow_te", "quant_lvl_data_te", "ibkr_historical_te", "chat_history", "economic_events"]:
+    for table in ["unusual_whales_flow_te", "quant_lvl_data_te", "ibkr_historical_te", "chat_history", "economic_events", "company_macro_sensitivities"]:
         assert any(f"CREATE TABLE IF NOT EXISTS {table}" in sql for sql in executed_sqls)
 
 
@@ -173,7 +175,8 @@ def test_ensure_all_schemas_idempotency(mock_engine):
         "quant_lvl_data_te": "verified",
         "ibkr_historical_te": "verified",
         "chat_history": "verified",
-        "economic_events": "verified"
+        "economic_events": "verified",
+        "company_macro_sensitivities": "verified"
     }
     call_count_first_run = conn.execute.call_count
 
