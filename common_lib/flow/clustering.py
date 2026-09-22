@@ -219,34 +219,53 @@ def upsert_semantic_profile(
     if embedding:
         emb_str = "[" + ",".join(str(f) for f in embedding) + "]"
 
-    sql = sa.text("""
-        INSERT INTO ticker_semantic_profiles (
-            ticker, cik, company_name, sector, business_summary, embedding, last_filing_date, updated_at
-        ) VALUES (
-            :ticker, :cik, :company_name, :sector, :business_summary, 
-            CASE WHEN :embedding IS NOT NULL THEN :embedding::vector ELSE NULL END,
-            :last_filing_date, CURRENT_TIMESTAMP
-        )
-        ON CONFLICT (ticker) DO UPDATE SET
-            cik = EXCLUDED.cik,
-            company_name = EXCLUDED.company_name,
-            sector = EXCLUDED.sector,
-            business_summary = EXCLUDED.business_summary,
-            embedding = COALESCE(EXCLUDED.embedding, ticker_semantic_profiles.embedding),
-            last_filing_date = EXCLUDED.last_filing_date,
-            updated_at = CURRENT_TIMESTAMP;
-    """)
+    params: Dict[str, Any] = {
+        "ticker": clean_ticker,
+        "cik": cik,
+        "company_name": company_name,
+        "sector": sector,
+        "business_summary": business_summary,
+        "last_filing_date": last_filing_date or date.today()
+    }
+
+    if emb_str:
+        sql = sa.text("""
+            INSERT INTO ticker_semantic_profiles (
+                ticker, cik, company_name, sector, business_summary, embedding, last_filing_date, updated_at
+            ) VALUES (
+                :ticker, :cik, :company_name, :sector, :business_summary, 
+                CAST(:embedding AS vector),
+                :last_filing_date, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (ticker) DO UPDATE SET
+                cik = EXCLUDED.cik,
+                company_name = EXCLUDED.company_name,
+                sector = EXCLUDED.sector,
+                business_summary = EXCLUDED.business_summary,
+                embedding = EXCLUDED.embedding,
+                last_filing_date = EXCLUDED.last_filing_date,
+                updated_at = CURRENT_TIMESTAMP;
+        """)
+        params["embedding"] = emb_str
+    else:
+        sql = sa.text("""
+            INSERT INTO ticker_semantic_profiles (
+                ticker, cik, company_name, sector, business_summary, last_filing_date, updated_at
+            ) VALUES (
+                :ticker, :cik, :company_name, :sector, :business_summary, 
+                :last_filing_date, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (ticker) DO UPDATE SET
+                cik = EXCLUDED.cik,
+                company_name = EXCLUDED.company_name,
+                sector = EXCLUDED.sector,
+                business_summary = EXCLUDED.business_summary,
+                last_filing_date = EXCLUDED.last_filing_date,
+                updated_at = CURRENT_TIMESTAMP;
+        """)
 
     with engine.begin() as conn:
-        conn.execute(sql, {
-            "ticker": clean_ticker,
-            "cik": cik,
-            "company_name": company_name,
-            "sector": sector,
-            "business_summary": business_summary,
-            "embedding": emb_str,
-            "last_filing_date": last_filing_date or date.today()
-        })
+        conn.execute(sql, params)
     logger.info(f"Successfully upserted semantic profile for {clean_ticker}")
 
 
@@ -388,22 +407,22 @@ def cluster_thematic_flow(
     # 1. Resolve trade date
     with engine.connect() as conn:
         if trade_date is None:
-            max_dt = conn.execute(sa.text("SELECT MAX(trade_date) FROM unusual_whales_flow_te;")).scalar()
-            resolved_date = max_dt or date.today()
+            max_dt = conn.execute(sa.text("SELECT MAX(trade_date) FROM unusual_option_flow_te;")).scalar()
+            resolved_date = str(max_dt) if max_dt else str(date.today())
         elif isinstance(trade_date, str):
-            resolved_date = datetime.strptime(trade_date.split()[0], "%Y-%m-%d").date()
+            resolved_date = trade_date.split()[0]
         else:
-            resolved_date = trade_date
+            resolved_date = str(trade_date)
 
         # 2. Query today's flow aggregated per ticker
         flow_sql = sa.text("""
             SELECT 
                 symbol,
                 SUM(premium) AS total_premium,
-                SUM(CASE WHEN call_put = 'CALL' THEN premium ELSE 0 END) AS call_premium,
-                SUM(CASE WHEN call_put = 'PUT' THEN premium ELSE 0 END) AS put_premium,
+                SUM(CASE WHEN order_type ILIKE '%CALL%' THEN premium ELSE 0 END) AS call_premium,
+                SUM(CASE WHEN order_type ILIKE '%PUT%' THEN premium ELSE 0 END) AS put_premium,
                 COUNT(*) AS trade_count
-            FROM unusual_whales_flow_te
+            FROM unusual_option_flow_te
             WHERE trade_date = :trade_date
             GROUP BY symbol
             ORDER BY total_premium DESC;
@@ -411,7 +430,7 @@ def cluster_thematic_flow(
         flow_rows = conn.execute(flow_sql, {"trade_date": resolved_date}).fetchall()
 
     if not flow_rows:
-        logger.info(f"No flow prints found in unusual_whales_flow_te for {resolved_date}.")
+        logger.info(f"No flow prints found in unusual_option_flow_te for {resolved_date}.")
         return []
 
     ticker_stats = {}
