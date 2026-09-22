@@ -13,19 +13,22 @@ from common_lib.database.postgres import get_postgres_engine
 from common_lib.economic_events.extract import extract_all_upcoming_events
 from common_lib.economic_events.transform import transform_raw_events
 from common_lib.economic_events.load import load_events_to_postgres
+from common_lib.economic_events.embeddings import embed_missing_records
 
 logger = logging.getLogger("quant.common_lib.economic_events.runner")
 
 
 def run_economic_events_sync(
     config_or_engine: Optional[Any] = None,
-    force_refresh: bool = False
+    force_refresh: bool = False,
+    api_key: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Executes a complete ingestion run:
     1. Extract calendar feeds with rate-limiting and caching.
     2. Transform and validate events into RAG-ready records.
     3. Idempotently upsert records into PostgreSQL.
+    4. Generate and persist 768-dim vector embeddings via Gemini.
     """
     start_time = time.time()
     logger.info("Starting Economic Events ingestion cycle via common_lib runner...")
@@ -47,8 +50,15 @@ def run_economic_events_sync(
     # 3. Load
     loaded_count = load_events_to_postgres(records, engine=engine)
 
+    # 4. Embed (RAG Vector Generation)
+    try:
+        embedded_count = embed_missing_records(engine=engine, api_key=api_key)
+    except Exception as emb_err:
+        logger.warning(f"Vector embedding generation encountered an error: {emb_err}")
+        embedded_count = 0
+
     duration = time.time() - start_time
-    logger.info(f"Ingestion cycle completed in {duration:.2f}s: extracted={extract_count}, transformed={transform_count}, loaded={loaded_count}")
+    logger.info(f"Ingestion cycle completed in {duration:.2f}s: extracted={extract_count}, transformed={transform_count}, loaded={loaded_count}, embedded={embedded_count}")
 
     return {
         "status": "success",
@@ -56,4 +66,5 @@ def run_economic_events_sync(
         "raw_extracted": extract_count,
         "records_transformed": transform_count,
         "records_loaded": loaded_count,
+        "records_embedded": embedded_count,
     }
