@@ -14,6 +14,7 @@ from common_lib.flow.clustering import (
     upsert_semantic_profile,
     seed_core_watchlist_profiles,
     cluster_thematic_flow,
+    resolve_macro_sector_family,
     CORE_10K_SUMMARIES,
 )
 
@@ -187,3 +188,87 @@ def test_cluster_thematic_flow_empty():
 
     clusters = cluster_thematic_flow(engine=mock_engine, trade_date=date(2026, 9, 21))
     assert clusters == []
+
+
+def test_resolve_macro_sector_family():
+    """Verifies that tickers and granular sector strings map to canonical macro families."""
+    # Ticker overrides
+    assert resolve_macro_sector_family(None, "NVDA") == "SEMICONDUCTORS & HARDWARE"
+    assert resolve_macro_sector_family(None, "AMD") == "SEMICONDUCTORS & HARDWARE"
+    assert resolve_macro_sector_family(None, "MU") == "SEMICONDUCTORS & HARDWARE"
+    assert resolve_macro_sector_family(None, "PLTR") == "ENTERPRISE SOFTWARE & CLOUD"
+    assert resolve_macro_sector_family(None, "CRWD") == "ENTERPRISE SOFTWARE & CLOUD"
+    assert resolve_macro_sector_family(None, "MSFT") == "ENTERPRISE SOFTWARE & CLOUD"
+    assert resolve_macro_sector_family(None, "AAPL") == "MEGA-CAP PLATFORMS & CONSUMER TECH"
+    assert resolve_macro_sector_family(None, "META") == "MEGA-CAP PLATFORMS & CONSUMER TECH"
+    assert resolve_macro_sector_family(None, "SOFI") == "FINANCIAL TECHNOLOGY & CRYPTO"
+    assert resolve_macro_sector_family(None, "TSLA") == "AUTOMOTIVE & MOBILITY"
+
+    # Text fallbacks
+    assert resolve_macro_sector_family("Semiconductors & Related Devices") == "SEMICONDUCTORS & HARDWARE"
+    assert resolve_macro_sector_family("Prepackaged Software & SaaS") == "ENTERPRISE SOFTWARE & CLOUD"
+    assert resolve_macro_sector_family("Consumer Electronics") == "MEGA-CAP PLATFORMS & CONSUMER TECH"
+    assert resolve_macro_sector_family("Security Brokers & Digital Exchanges") == "THEMATIC EQUITIES"
+
+
+def test_sector_boundary_guard_separates_semiconductors_and_software():
+    """
+    Critical Boundary Guard Test:
+    Even when PLTR, CRWD, NVDA, and AMD all share close cosine distance (e.g. <= 0.20),
+    the hard macro sector boundary guard MUST partition them into:
+      - Cluster 1: SEMICONDUCTORS & HARDWARE (NVDA, AMD)
+      - Cluster 2: ENTERPRISE SOFTWARE & CLOUD (PLTR, CRWD)
+    Proves that PLTR and NVDA never cross-contaminate or end up in the same boat.
+    """
+    mock_engine = MagicMock(spec=sa.Engine)
+    mock_conn = MagicMock()
+    mock_engine.connect.return_value.__enter__.return_value = mock_conn
+
+    # 4 active tickers all with heavy bullish flow
+    flow_rows = [
+        ("NVDA", 5000000.0, 4000000.0, 1000000.0, 120),
+        ("AMD",  3000000.0, 2500000.0, 500000.0,  80),
+        ("PLTR", 4000000.0, 3500000.0, 500000.0,  95),
+        ("CRWD", 2500000.0, 2000000.0, 500000.0,  60),
+    ]
+
+    # Identical synthetic vector for all 4 tickers!
+    # Without the boundary guard, all 4 would merge into 1 single mega-cluster.
+    v_shared = _unit_vector([1.0] + [0.0] * 767)
+
+    profile_rows = [
+        ("NVDA", "NVIDIA Corporation", "Semiconductors & AI Compute", v_shared),
+        ("AMD",  "Advanced Micro Devices", "Semiconductors & AI Accelerators", v_shared),
+        ("PLTR", "Palantir Technologies", "Enterprise Software & AI Data Infrastructure", v_shared),
+        ("CRWD", "CrowdStrike Holdings", "Cybersecurity & Cloud Protection", v_shared),
+    ]
+
+    mock_conn.execute.side_effect = [
+        MagicMock(fetchall=lambda: flow_rows),
+        MagicMock(fetchall=lambda: profile_rows),
+    ]
+
+    clusters = cluster_thematic_flow(
+        engine=mock_engine,
+        trade_date=date(2026, 9, 21),
+        min_cluster_premium=1000000.0,
+        max_distance=0.35  # Loose distance threshold
+    )
+
+    # Must produce EXACTLY 2 distinct clusters, not 1 giant cluster!
+    assert len(clusters) == 2, f"Expected 2 partitioned clusters, got {len(clusters)}"
+
+    semi_cluster = next((c for c in clusters if c["macro_sector_family"] == "SEMICONDUCTORS & HARDWARE"), None)
+    soft_cluster = next((c for c in clusters if c["macro_sector_family"] == "ENTERPRISE SOFTWARE & CLOUD"), None)
+
+    assert semi_cluster is not None, "Missing Semiconductors cluster"
+    assert soft_cluster is not None, "Missing Enterprise Software cluster"
+
+    semi_tickers = {t["ticker"] for t in semi_cluster["tickers"]}
+    soft_tickers = {t["ticker"] for t in soft_cluster["tickers"]}
+
+    assert semi_tickers == {"NVDA", "AMD"}, f"Semiconductor cluster contaminated: {semi_tickers}"
+    assert soft_tickers == {"PLTR", "CRWD"}, f"Software cluster contaminated: {soft_tickers}"
+    assert "PLTR" not in semi_tickers
+    assert "NVDA" not in soft_tickers
+
