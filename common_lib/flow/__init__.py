@@ -7,6 +7,7 @@ from common_lib.flow.clustering import (
     ingest_ticker_10k,
     seed_core_watchlist_profiles,
     cluster_thematic_flow,
+    resolve_macro_sector_family,
     CORE_10K_SUMMARIES,
 )
 
@@ -17,5 +18,6 @@ __all__ = [
     "ingest_ticker_10k",
     "seed_core_watchlist_profiles",
     "cluster_thematic_flow",
+    "resolve_macro_sector_family",
     "CORE_10K_SUMMARIES",
 ]

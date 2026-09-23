@@ -251,6 +251,68 @@ def cosine_distance(vec_a: List[float], vec_b: List[float]) -> float:
     return round(1.0 - sim, 6)
 
 
+def resolve_macro_sector_family(sector: Optional[str], ticker: Optional[str] = None) -> str:
+    """
+    Partitions granular sector taxonomy and tickers into macro industry families.
+    Enforces that physical semiconductors/hardware do not cluster with enterprise software,
+    fintech, or consumer platforms due to shared text vocabulary in SEC filings.
+    """
+    clean_ticker = (ticker or "").upper().strip()
+
+    # Explicit ticker overrides for canonical watchlist
+    ticker_macro_map = {
+        "NVDA": "SEMICONDUCTORS & HARDWARE",
+        "AMD": "SEMICONDUCTORS & HARDWARE",
+        "AVGO": "SEMICONDUCTORS & HARDWARE",
+        "MU": "SEMICONDUCTORS & HARDWARE",
+        "INTC": "SEMICONDUCTORS & HARDWARE",
+        "MRVL": "SEMICONDUCTORS & HARDWARE",
+        "SNDK": "SEMICONDUCTORS & HARDWARE",
+        "PLTR": "ENTERPRISE SOFTWARE & CLOUD",
+        "CRWD": "ENTERPRISE SOFTWARE & CLOUD",
+        "MSFT": "ENTERPRISE SOFTWARE & CLOUD",
+        "AAPL": "MEGA-CAP PLATFORMS & CONSUMER TECH",
+        "GOOG": "MEGA-CAP PLATFORMS & CONSUMER TECH",
+        "GOOGL": "MEGA-CAP PLATFORMS & CONSUMER TECH",
+        "META": "MEGA-CAP PLATFORMS & CONSUMER TECH",
+        "AMZN": "MEGA-CAP PLATFORMS & CONSUMER TECH",
+        "TSLA": "AUTOMOTIVE & MOBILITY",
+        "RIVN": "AUTOMOTIVE & MOBILITY",
+        "LCID": "AUTOMOTIVE & MOBILITY",
+        "SOFI": "FINANCIAL TECHNOLOGY & CRYPTO",
+        "AFRM": "FINANCIAL TECHNOLOGY & CRYPTO",
+        "UPST": "FINANCIAL TECHNOLOGY & CRYPTO",
+        "COIN": "FINANCIAL TECHNOLOGY & CRYPTO",
+        "HOOD": "FINANCIAL TECHNOLOGY & CRYPTO",
+        "PYPL": "FINANCIAL TECHNOLOGY & CRYPTO",
+        "XOM": "ENERGY & INFRASTRUCTURE",
+        "CVX": "ENERGY & INFRASTRUCTURE",
+        "BE": "ENERGY & INFRASTRUCTURE",
+        "SPY": "BROAD MARKET",
+        "QQQ": "BROAD MARKET",
+    }
+    if clean_ticker in ticker_macro_map:
+        return ticker_macro_map[clean_ticker]
+
+    sec = (sector or "").lower().strip()
+    if any(k in sec for k in ["semiconductor", "memory", "foundry", "wafer", "hardware", "integrated circuit", "storage"]):
+        return "SEMICONDUCTORS & HARDWARE"
+    if any(k in sec for k in ["software", "cybersecurity", "cloud", "saas", "data infrastructure", "data platform"]):
+        return "ENTERPRISE SOFTWARE & CLOUD"
+    if any(k in sec for k in ["consumer electronics", "social media", "advertising", "platform", "media"]):
+        return "MEGA-CAP PLATFORMS & CONSUMER TECH"
+    if any(k in sec for k in ["fintech", "bank", "crypto", "lending", "credit", "financial", "payment"]):
+        return "FINANCIAL TECHNOLOGY & CRYPTO"
+    if any(k in sec for k in ["automotive", "vehicle", "electric vehicle", "mobility"]):
+        return "AUTOMOTIVE & MOBILITY"
+    if any(k in sec for k in ["oil", "gas", "energy", "fuel cell", "solar", "utility"]):
+        return "ENERGY & INFRASTRUCTURE"
+    if any(k in sec for k in ["etf", "index", "broad market"]):
+        return "BROAD MARKET"
+
+    return "THEMATIC EQUITIES"
+
+
 def get_semantic_profile(engine: sa.Engine, ticker: str) -> Optional[Dict[str, Any]]:
     """Retrieves existing semantic profile for ticker from PostgreSQL."""
     clean_ticker = ticker.upper().strip()
@@ -574,12 +636,15 @@ def cluster_thematic_flow(
 
     for i in range(len(embedded_tickers)):
         t1 = embedded_tickers[i]
+        fam1 = resolve_macro_sector_family(meta_map.get(t1, {}).get("sector"), t1)
         for j in range(i + 1, len(embedded_tickers)):
             t2 = embedded_tickers[j]
+            fam2 = resolve_macro_sector_family(meta_map.get(t2, {}).get("sector"), t2)
             dist = cosine_distance(embeddings_map[t1], embeddings_map[t2])
             distances[(t1, t2)] = dist
             distances[(t2, t1)] = dist
-            if dist <= max_distance:
+            # Hard Sector Boundary Guard: Only allow cluster linkages if both tickers share the same macro sector family
+            if fam1 == fam2 and dist <= max_distance:
                 adj[t1].add(t2)
                 adj[t2].add(t1)
 
@@ -632,6 +697,7 @@ def cluster_thematic_flow(
             if s and s not in ("Public Equities", "Thematic Equities", "None", "")
         ]
         dominant_sector = max(set(valid_sectors), key=valid_sectors.count) if valid_sectors else "Thematic Technology & Growth"
+        cluster_macro_family = resolve_macro_sector_family(dominant_sector, comp[0])
         theme_title = f"{dominant_sector} Rotation ({', '.join(comp)})"
 
         ticker_items = []
@@ -651,6 +717,7 @@ def cluster_thematic_flow(
             "trade_date": str(resolved_date),
             "theme_name": theme_title,
             "dominant_sector": dominant_sector,
+            "macro_sector_family": cluster_macro_family,
             "tickers": ticker_items,
             "ticker_count": len(ticker_items),
             "combined_premium": round(combined_premium, 2),
