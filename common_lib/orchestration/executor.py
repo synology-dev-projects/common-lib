@@ -13,6 +13,7 @@ from sqlalchemy.engine import Engine
 
 from common_lib.orchestration.registry import (
     PIPELINE_DAG,
+    get_registered_dag,
     get_topological_order,
     get_downstream_dependencies,
     resolve_runner,
@@ -65,7 +66,7 @@ def execute_single_pipeline(
     4. Atomically logs lifecycle states into PostgreSQL pipeline_runs.
     """
     if dag is None:
-        dag = PIPELINE_DAG
+        dag = get_registered_dag()
 
     if pipeline_name not in dag:
         raise KeyError(f"Pipeline '{pipeline_name}' not found in registered DAG.")
@@ -123,13 +124,13 @@ def execute_single_pipeline(
     # 5. Execute with Exponential Backoff Retry Loop
     last_error = None
     rows_affected = 0
+    run_metadata = {}
 
     for attempt in range(1, max_retries + 1):
         try:
             logger.info(f"▶️ Executing '{pipeline_name}' (Attempt {attempt}/{max_retries}) on {session_date}...")
             
             # Smart invocation matching target signatures
-            # Try passing session_date, else date string, else kwargs, else 0 args
             try:
                 res = runner_fn(session_date=session_date)
             except TypeError:
@@ -144,7 +145,13 @@ def execute_single_pipeline(
                         except TypeError:
                             res = runner_fn()
 
-            if isinstance(res, int):
+            if hasattr(res, "rows_affected") and hasattr(res, "success"):
+                rows_affected = res.rows_affected
+                if hasattr(res, "metadata") and isinstance(res.metadata, dict):
+                    run_metadata.update(res.metadata)
+                if not res.success:
+                    raise RuntimeError(getattr(res, "error_message", None) or f"Pipeline '{pipeline_name}' returned failure.")
+            elif isinstance(res, int):
                 rows_affected = res
             elif isinstance(res, (tuple, list)) and len(res) > 0 and isinstance(res[0], int):
                 rows_affected = res[0]
@@ -154,7 +161,8 @@ def execute_single_pipeline(
                 rows_affected = res.get("rows_affected", 0)
 
             duration = round(time.time() - start_time, 2)
-            record_run_success(engine, run_id, rows_affected=rows_affected, metadata={"duration_sec": duration})
+            run_metadata["duration_sec"] = duration
+            record_run_success(engine, run_id, rows_affected=rows_affected, metadata=run_metadata)
             logger.info(f"✅ [SUCCESS] '{pipeline_name}' finished in {duration}s. Rows affected: {rows_affected}")
             return {
                 "pipeline_name": pipeline_name,
@@ -163,6 +171,7 @@ def execute_single_pipeline(
                 "status": "SUCCESS",
                 "rows_affected": rows_affected,
                 "duration_sec": duration,
+                "metadata": run_metadata,
             }
 
         except Exception as err:
@@ -216,7 +225,7 @@ def run_dag_cycle(
     - Executes tasks sequentially, skipping succeeded jobs and blocking on failures.
     """
     if dag is None:
-        dag = PIPELINE_DAG
+        dag = get_registered_dag()
 
     full_order = get_topological_order(dag)
 
