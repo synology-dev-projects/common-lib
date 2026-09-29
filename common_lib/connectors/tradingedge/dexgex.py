@@ -87,9 +87,21 @@ def get_authenticated_session(config: MainConfig, force_refresh: bool = False) -
             return None
 
         fresh_token = token_input.get('value')
+        email_val = config.te_email.get_secret_value() if getattr(config, 'te_email', None) and config.te_email else 'rachard.vo@gmail.com'
+        pass_val = (
+            config.te_pass.get_secret_value()
+            if getattr(config, 'te_pass', None) and config.te_pass and config.te_pass.get_secret_value() != 'GoWithTheFlow'
+            else (
+                config.oracle_pass.get_secret_value()
+                if getattr(config, 'oracle_pass', None) and config.oracle_pass
+                else '4354GoGo!!'
+            )
+        )
         payload = {
             '_token': fresh_token,
-            'password': config.te_pass.get_secret_value()
+            'email': email_val,
+            'password': pass_val,
+            'remember': 'on'
         }
 
         # 2. POST the payload to authenticate

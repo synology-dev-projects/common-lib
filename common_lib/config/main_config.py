@@ -61,9 +61,10 @@ class MainConfig(BaseSettings):
     te_cookie: SecretStr = Field(...)
     te_dex_gex_url: str = "https://tools.tradingedge.club/api/dex/data"
     te_option_flow_url: str = "https://flow.tradingedge.club"
-    te_login_gate: str = "https://tools.tradingedge.club/gate"
+    te_login_gate: str = "https://tools.tradingedge.club/login"
     te_option_login_gate: str = "https://flow.tradingedge.club/Login.aspx?ReturnUrl=%2fdefault.aspx"
-    te_pass: SecretStr = Field(default=SecretStr("GoWithTheFlow"))
+    te_email: SecretStr = Field(default=SecretStr("rachard.vo@gmail.com"), alias="TE_EMAIL")
+    te_pass: SecretStr = Field(default=SecretStr("4354GoGo!!"), alias="TE_PASS")
 
     # --- NFTY --- #
     ntfy_endpoint : str = Field(...)
