@@ -70,14 +70,18 @@ def get_authenticated_session(config: MainConfig, force_refresh: bool = False) -
     })
 
     # 1. GET request to load the login page and grab the CSRF token
+    login_gate = getattr(config, "te_login_gate", "https://tools.tradingedge.club/login")
+    if login_gate.endswith("/gate"):
+        login_gate = login_gate[:-5] + "/login"
+
     try:
-        get_response = session.get(config.te_login_gate, timeout=10.0)
+        get_response = session.get(login_gate, timeout=10.0)
         if get_response.status_code == 429:
             retry_after = int(get_response.headers.get("Retry-After", 30)) + 1
             wait_time = min(max(retry_after, 2), 65)
             logging.warning(f"TradingEdge login gate GET returned 429. Backing off for {wait_time}s...")
             time.sleep(wait_time)
-            get_response = session.get(config.te_login_gate, timeout=10.0)
+            get_response = session.get(login_gate, timeout=10.0)
 
         soup = BeautifulSoup(get_response.text, 'html.parser')
         token_input = soup.find('input', {'name': '_token'})
@@ -105,13 +109,13 @@ def get_authenticated_session(config: MainConfig, force_refresh: bool = False) -
         }
 
         # 2. POST the payload to authenticate
-        post_response = session.post(config.te_login_gate, data=payload, timeout=10.0)
+        post_response = session.post(login_gate, data=payload, timeout=10.0)
         if post_response.status_code == 429:
             retry_after = int(post_response.headers.get("Retry-After", 30)) + 1
             wait_time = min(max(retry_after, 2), 65)
             logging.warning(f"TradingEdge login gate POST returned 429. Backing off for {wait_time}s...")
             time.sleep(wait_time)
-            post_response = session.post(config.te_login_gate, data=payload, timeout=10.0)
+            post_response = session.post(login_gate, data=payload, timeout=10.0)
 
         if post_response.status_code in [200, 302] and "Sessions expire" not in post_response.text:
             logging.info("TradingEdge authentication successful! Session cached.")
