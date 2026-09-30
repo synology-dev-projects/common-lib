@@ -1,4 +1,4 @@
-﻿"""
+"""
 Comprehensive Unit Tests for Pipeline Orchestrator & Dependency Manager.
 """
 
@@ -288,6 +288,8 @@ def test_executor_dry_run(memory_db):
         dry_run=True,
     )
     assert dry_plan["dry_run"] is True
-    assert len(dry_plan["plan"]) == len(PIPELINE_DAG)
+    from common_lib.orchestration import get_registered_dag
+    assert len(dry_plan["plan"]) == len(get_registered_dag())
     assert dry_plan["plan"][0]["planned_action"] == "EXECUTE"
-    assert "BLOCKED" in dry_plan["plan"][2]["planned_action"]  # snapshot blocked until flow runs
+    snapshot_step = next(p for p in dry_plan["plan"] if p["pipeline_name"] == "gexdex_snapshot")
+    assert "BLOCKED" in snapshot_step["planned_action"]
