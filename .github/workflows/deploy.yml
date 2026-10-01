@@ -67,16 +67,18 @@ jobs:
           mkdir -p "$TARGET_PATH"
 
           # Wipe OLD source code to ensure deleted files are removed
-          # NOTE: We do NOT delete .venv, allowing it to persist!
-          echo "🧹 Wiping old src/, tests/, and configs..."
-          rm -rf "$TARGET_PATH"/*
- 
-          # Copy NEW files to the persistent project root
-          echo "🚀 Copying new files..."
-          cp -r common_lib "$TARGET_PATH/"
-          cp -r tests "$TARGET_PATH/"
-          cp verify.sh "$TARGET_PATH/"
-          cp pyproject.toml "$TARGET_PATH/"
+          # Sync files in-place to avoid empty mount window for downstream containers
+          echo "🚀 Syncing new files..."
+          if command -v rsync >/dev/null 2>&1; then
+            rsync -a --delete common_lib/ "$TARGET_PATH/common_lib/"
+            rsync -a --delete tests/ "$TARGET_PATH/tests/"
+            cp verify.sh pyproject.toml "$TARGET_PATH/" 2>/dev/null || true
+          else
+            mkdir -p "$TARGET_PATH/common_lib"
+            cp -r common_lib/* "$TARGET_PATH/common_lib/"
+            cp -r tests "$TARGET_PATH/"
+            cp verify.sh pyproject.toml "$TARGET_PATH/" 2>/dev/null || true
+          fi
           
           sudo chown -R 1026:100 "$TARGET_PATH"
           chmod -R 775 "$TARGET_PATH"
