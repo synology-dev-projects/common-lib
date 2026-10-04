@@ -12,6 +12,7 @@ logger = logging.getLogger("quant.pipeline.flow.extract")
 def get_authenticated_flow_session(config: MainConfig) -> requests.Session:
     """
     Creates an authenticated requests.Session for TradingEdge Flow using ASP.NET ViewState & m_userName.
+    Validates that the server issues the '.EDGE' session ticket cookie upon form submission.
     """
     session = requests.Session()
     session.headers.update({
@@ -20,31 +21,40 @@ def get_authenticated_flow_session(config: MainConfig) -> requests.Session:
     })
     
     login_url = getattr(config, "te_option_login_gate", "https://flow.tradingedge.club/Login.aspx?ReturnUrl=%2fdefault.aspx")
-    te_pass = config.te_pass.get_secret_value() if hasattr(config.te_pass, "get_secret_value") else str(config.te_pass)
     
-    try:
-        r_get = session.get(login_url, timeout=15)
-        soup = BeautifulSoup(r_get.text, "html.parser")
+    if hasattr(config, "te_flow_passcode") and getattr(config, "te_flow_passcode", None):
+        flow_passcode = config.te_flow_passcode.get_secret_value() if hasattr(config.te_flow_passcode, "get_secret_value") else str(config.te_flow_passcode)
+    else:
+        flow_passcode = "GoWithTheFlow"
+    
+    r_get = session.get(login_url, timeout=15)
+    soup = BeautifulSoup(r_get.text, "html.parser")
+    
+    viewstate = soup.find("input", id="__VIEWSTATE")
+    viewstate_gen = soup.find("input", id="__VIEWSTATEGENERATOR")
+    event_val = soup.find("input", id="__EVENTVALIDATION")
+    
+    payload = {
+        "__VIEWSTATE": viewstate.get("value", "") if viewstate else "",
+        "__VIEWSTATEGENERATOR": viewstate_gen.get("value", "") if viewstate_gen else "",
+        "__EVENTVALIDATION": event_val.get("value", "") if event_val else "",
+        "m_userName": flow_passcode,
+        "m_btnLogin": "Confirm Identity"
+    }
+    
+    post_url = "https://flow.tradingedge.club" + r_get.url.split("tradingedge.club")[-1]
+    r_post = session.post(post_url, data=payload, timeout=15)
+    
+    cookies = session.cookies.get_dict() if hasattr(session.cookies, "get_dict") else {}
+    if ".EDGE" not in cookies:
+        raise RuntimeError(
+            "TradingEdge Flow authentication failed: '.EDGE' session ticket cookie missing. "
+            "Verify TE_FLOW_PASSCODE or ASP.NET login gate responsiveness."
+        )
         
-        viewstate = soup.find("input", id="__VIEWSTATE")
-        viewstate_gen = soup.find("input", id="__VIEWSTATEGENERATOR")
-        event_val = soup.find("input", id="__EVENTVALIDATION")
-        
-        payload = {
-            "__VIEWSTATE": viewstate.get("value", "") if viewstate else "",
-            "__VIEWSTATEGENERATOR": viewstate_gen.get("value", "") if viewstate_gen else "",
-            "__EVENTVALIDATION": event_val.get("value", "") if event_val else "",
-            "m_userName": te_pass,
-            "m_btnLogin": "Confirm Identity"
-        }
-        
-        post_url = "https://flow.tradingedge.club" + r_get.url.split("tradingedge.club")[-1]
-        session.post(post_url, data=payload, timeout=15)
-        logger.info("Successfully authenticated with TradingEdge Flow gate.")
-    except Exception as ex:
-        logger.warning(f"Flow login gate encounter: {ex}")
-        
+    logger.info("Successfully authenticated with TradingEdge Flow gate (.EDGE cookie acquired).")
     return session
+
 
 def parse_html_flow_table(html_content: str, symbol: Optional[str] = None) -> tuple[List[Dict[str, Any]], Optional[float]]:
     """
@@ -133,6 +143,9 @@ def extract_flow_for_symbol(
     try:
         resp = sess.get(url, timeout=20)
         if resp.status_code == 200:
+            if "Login.aspx" in resp.url or "form-signin" in resp.text:
+                logger.error(f"TradingEdge Flow redirected {sym} to Login.aspx. Session may have expired.")
+                return []
             records, score = parse_html_flow_table(resp.text, symbol=sym)
             
             if cutoff_date:

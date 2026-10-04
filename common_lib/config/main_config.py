@@ -65,6 +65,7 @@ class MainConfig(BaseSettings):
     te_option_login_gate: str = "https://flow.tradingedge.club/Login.aspx?ReturnUrl=%2fdefault.aspx"
     te_email: SecretStr = Field(default=SecretStr("rachard.vo@gmail.com"), alias="TE_EMAIL")
     te_pass: SecretStr = Field(default=SecretStr("4354GoGo!!"), alias="TE_PASS")
+    te_flow_passcode: SecretStr = Field(default=SecretStr("GoWithTheFlow"), alias="TE_FLOW_PASSCODE")
 
     # --- NFTY --- #
     ntfy_endpoint : str = Field(...)
