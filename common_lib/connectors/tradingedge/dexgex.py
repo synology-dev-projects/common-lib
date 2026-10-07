@@ -178,7 +178,7 @@ def extract_raw_data(
 
     response = None
     try:
-        if isinstance(session_or_cookie, requests.Session):
+        if isinstance(session_or_cookie, requests.Session) or hasattr(session_or_cookie, "get"):
             response = session_or_cookie.get(dex_gex_url, timeout=12.0)
         else:
             headers = {
@@ -279,7 +279,10 @@ def convert_raw_to_df(data: dict | None) -> pd.DataFrame | None:
         'put_gex': 'roll_put_gex'
     }, inplace=True)
 
-    df = pd.merge(df_granular, df_rolling, on='strike', how='left')
+    if not df_rolling.empty and 'strike' in df_rolling.columns:
+        df = pd.merge(df_granular, df_rolling, on='strike', how='left')
+    else:
+        df = df_granular
 
     global_scalars = [
         'ticker', 'spot_price', 'call_put_ratio',

@@ -35,7 +35,11 @@ except ImportError:
 logger = logging.getLogger("quant.orchestration.prefect")
 
 ACTIVE_PIPELINES = ["quant_levels", "unusual_options_flow", "unusual_option_flow"]
-INACTIVE_PIPELINES = ["gexdex_snapshot", "market_confluence"]
+INACTIVE_PIPELINES = [
+    "gexdex_snapshot",
+    "market_confluence",
+    "economic_events",
+]
 
 
 @task(name="execute-quant-levels", retries=2, retry_delay_seconds=10)
