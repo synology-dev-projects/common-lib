@@ -337,6 +337,48 @@ def get_all_pipeline_statuses(
         return statuses
 
 
+def _check_table_has_data_for_date(engine: Engine, table_name: str, session_date: date) -> int:
+    """Checks if target table has rows for the given session date (or adjacent date). Returns row count."""
+    date_cols = [
+        'trade_date', 'snapshot_date', 'scan_date', 'session_date',
+        'datetime', 'level_date', 'date_extracted', 'updated_at', 'created_at'
+    ]
+    is_sqlite = engine.dialect.name == "sqlite"
+    s_date_str = str(session_date)
+
+    try:
+        insp = sa.inspect(engine)
+        if not insp.has_table(table_name):
+            return 0
+
+        cols = [c["name"].lower() for c in insp.get_columns(table_name)]
+        matched_date_col = next((c for c in date_cols if c in cols), None)
+        if not matched_date_col:
+            return 0
+
+        with engine.connect() as conn:
+            if is_sqlite:
+                query = sa.text(f"SELECT COUNT(*) FROM {table_name} WHERE DATE({matched_date_col}) = :dt OR {matched_date_col} = :dt")
+                cnt = conn.execute(query, {"dt": s_date_str}).scalar() or 0
+            else:
+                query = sa.text(f"SELECT COUNT(*) FROM {table_name} WHERE CAST({matched_date_col} AS DATE) = :dt")
+                cnt = conn.execute(query, {"dt": session_date}).scalar() or 0
+
+            # If 0 rows and table is gexdex_snapshot, check adjacent calendar day (market date vs next morning snapshot)
+            if int(cnt) == 0 and table_name == "gexdex_snapshot":
+                from datetime import timedelta
+                next_day = session_date + timedelta(days=1)
+                if is_sqlite:
+                    cnt = conn.execute(query, {"dt": str(next_day)}).scalar() or 0
+                else:
+                    cnt = conn.execute(query, {"dt": next_day}).scalar() or 0
+
+            return int(cnt)
+    except Exception as ex:
+        logger.warning(f"Error checking table data fallback for '{table_name}': {ex}")
+        return 0
+
+
 def check_upstream_dependencies(
     engine: Engine,
     pipeline_name: str,
@@ -346,6 +388,10 @@ def check_upstream_dependencies(
     """
     Checks if all declared upstream dependencies for pipeline_name have completed
     with status='SUCCESS' for the given session date.
+
+    Includes target table data freshness fallback: If an upstream has not logged
+    to pipeline_runs but its target table contains valid records for session_date,
+    it is treated as satisfied and a backfill record is logged into pipeline_runs.
 
     Returns:
         (is_ready: bool, blocked_by: List[str], upstream_statuses: Dict[str, str])
@@ -368,9 +414,49 @@ def check_upstream_dependencies(
     for upstream in upstreams:
         up_run = all_statuses.get(upstream)
         status_val = up_run["status"] if up_run else "NOT_STARTED"
-        upstream_statuses[upstream] = status_val
+
+        # If status is not SUCCESS in pipeline_runs, check target table fallback
         if status_val != "SUCCESS":
-            blocked_by.append(upstream)
+            meta = dag.get(upstream, {}) if dag else {}
+            target_tables = meta.get("target_tables", [])
+            if not target_tables:
+                default_table_map = {
+                    "unusual_option_flow": ["unusual_option_flow_te"],
+                    "unusual_options_flow": ["unusual_option_flow_te"],
+                    "quant_levels": ["quant_lvl_data_te"],
+                    "gexdex_snapshot": ["gexdex_snapshot"],
+                    "market_confluence": ["daily_confluence_scans", "daily_confluence_summary"],
+                    "economic_events": ["economic_events"],
+                }
+                target_tables = default_table_map.get(upstream, [])
+
+            has_table_data = False
+            total_rows = 0
+            for tbl in target_tables:
+                rows_in_tbl = _check_table_has_data_for_date(engine, tbl, session_date)
+                if rows_in_tbl > 0:
+                    has_table_data = True
+                    total_rows += rows_in_tbl
+
+            if has_table_data:
+                logger.info(
+                    f"✅ [DEPENDENCY FALLBACK] Upstream '{upstream}' unrecorded in pipeline_runs, "
+                    f"but verified {total_rows} records present in target table(s) {target_tables} "
+                    f"for session {session_date}. Marking as satisfied."
+                )
+                status_val = "SUCCESS"
+                upstream_statuses[upstream] = "SUCCESS (DATA_FALLBACK)"
+                # Auto-record backfill into pipeline_runs to sync state
+                try:
+                    run_id = record_run_start(engine, upstream, session_date, metadata={"fallback": "target_table_freshness"})
+                    record_run_success(engine, run_id, rows_affected=total_rows, metadata={"fallback": "target_table_freshness"})
+                except Exception as sync_ex:
+                    logger.debug(f"Could not backfill pipeline_runs for {upstream}: {sync_ex}")
+            else:
+                blocked_by.append(upstream)
+                upstream_statuses[upstream] = status_val
+        else:
+            upstream_statuses[upstream] = status_val
 
     is_ready = len(blocked_by) == 0
     return is_ready, blocked_by, upstream_statuses

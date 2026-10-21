@@ -249,12 +249,12 @@ def run_dag_cycle(
         for name in target_pipelines:
             upstreams = dag[name].get("upstream", [])
             existing = current_statuses.get(name)
-            is_ready = all(current_statuses.get(u, {}).get("status") == "SUCCESS" for u in upstreams)
+            is_ready, blocked_by, _ = check_upstream_dependencies(engine, name, session_date, dag=dag)
 
             if existing and existing["status"] == "SUCCESS" and not force_all:
                 action = "SKIP (Already SUCCESS)"
             elif not is_ready:
-                action = f"BLOCKED (Missing/failed upstreams: {[u for u in upstreams if current_statuses.get(u, {}).get('status') != 'SUCCESS']})"
+                action = f"BLOCKED (Missing/failed upstreams: {blocked_by})"
             else:
                 action = "EXECUTE"
 
