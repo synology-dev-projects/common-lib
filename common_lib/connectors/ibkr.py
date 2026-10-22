@@ -4,8 +4,14 @@ from typing import Optional, Any
 import pandas as pd
 
 try:
+    import asyncio
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
     from ib_insync import IB, Contract, util
-except ImportError:
+except (ImportError, RuntimeError):
     IB = None
     Contract = None
     util = None
