@@ -58,3 +58,7 @@ def run_economic_events_sync(
         "records_transformed": transform_count,
         "records_loaded": loaded_count,
     }
+
+
+# Fleet Standard Entrypoint Alias
+run_daily_incremental = run_economic_events_sync

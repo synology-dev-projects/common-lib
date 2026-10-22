@@ -22,6 +22,7 @@ class PipelineManifest:
     version: str = "1.0.0"
     category: str = "general"
     schedule: Optional[str] = None
+    enabled: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -35,6 +36,7 @@ class PipelineManifest:
             "version": self.version,
             "category": self.category,
             "schedule": self.schedule,
+            "enabled": self.enabled,
         }
 
 
@@ -85,6 +87,12 @@ def parse_pipeline_manifest(source: Union[str, Path, Dict[str, Any]]) -> Pipelin
     category = str(data.get("category", "general"))
     schedule = str(data.get("schedule", "")) if data.get("schedule") else None
 
+    raw_enabled = data.get("enabled", True)
+    if isinstance(raw_enabled, str):
+        enabled = raw_enabled.strip().lower() not in ("false", "0", "no", "off", "disabled")
+    else:
+        enabled = bool(raw_enabled)
+
     return PipelineManifest(
         name=name,
         display_name=display_name,
@@ -96,4 +104,5 @@ def parse_pipeline_manifest(source: Union[str, Path, Dict[str, Any]]) -> Pipelin
         version=version,
         category=category,
         schedule=schedule,
+        enabled=enabled,
     )

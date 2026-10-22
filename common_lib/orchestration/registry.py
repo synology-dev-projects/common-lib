@@ -98,6 +98,9 @@ def build_dag_from_manifests(manifests: Dict[str, PipelineManifest]) -> Dict[str
     """Converts a dictionary of PipelineManifest objects into the standard DAG dictionary."""
     dag: Dict[str, Dict[str, Any]] = {}
     for name, m in manifests.items():
+        if not getattr(m, "enabled", True):
+            logger.info(f"Skipping disabled pipeline manifest '{name}'")
+            continue
         dag[name] = {
             "upstream": m.upstream,
             "runner": m.runner,
@@ -107,6 +110,7 @@ def build_dag_from_manifests(manifests: Dict[str, PipelineManifest]) -> Dict[str
             "display_name": m.display_name,
             "version": m.version,
             "category": m.category,
+            "enabled": m.enabled,
         }
     return dag
 

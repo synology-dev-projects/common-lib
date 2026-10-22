@@ -115,7 +115,18 @@ def execute_single_pipeline(
                 logger.warning(f"Primary runner '{runner_spec}' failed: {resolve_err}. Trying fallback '{fallback_spec}'...")
                 runner_fn = resolve_runner(fallback_spec)
             else:
-                raise resolve_err
+                err_msg = f"Runner resolution failure: {resolve_err}"
+                logger.error(f"❌ '{pipeline_name}' failed to resolve runner: {err_msg}")
+                run_id = record_run_start(engine, pipeline_name, session_date, allow_concurrent=force_refresh)
+                record_run_failure(engine, run_id, err_msg, metadata={"attempts": 0})
+                return {
+                    "pipeline_name": pipeline_name,
+                    "session_date": str(session_date),
+                    "run_id": run_id,
+                    "status": "FAILED",
+                    "error": err_msg,
+                    "duration_sec": 0.0,
+                }
 
     # 4. Record Execution Start
     run_id = record_run_start(engine, pipeline_name, session_date, allow_concurrent=force_refresh)
