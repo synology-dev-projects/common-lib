@@ -296,6 +296,14 @@ class IBKROptionsExtractor:
         ]
 
         for chunk_idx, chunk in enumerate(chunks, start=1):
+            # Pre-qualify contracts to drop non-existent/invalid strikes and guarantee clean ticks
+            contracts_to_qualify = [pair[0] for pair in chunk]
+            try:
+                if hasattr(self.ib, "qualifyContracts"):
+                    self.ib.qualifyContracts(*contracts_to_qualify)
+            except Exception as qual_ex:
+                logger.debug(f"Chunk [{chunk_idx}] qualification note: {qual_ex}")
+
             chunk_records = self._process_batch_chunk(chunk, chunk_idx, len(chunks))
             extracted_records.extend(chunk_records)
             if chunk_idx < len(chunks):

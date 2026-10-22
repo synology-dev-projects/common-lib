@@ -125,11 +125,11 @@ class GexDexCalculator:
             delta = c.delta if (c.delta is not None and not math.isnan(c.delta)) else (b_call_d if c.right == "C" else b_put_d)
             gamma = c.gamma if (c.gamma is not None and not math.isnan(c.gamma) and c.gamma > 0.0) else b_gamma
 
-            # GEX Scaling: Dollar GEX per 1% move in spot: 0.01 * Spot^2 * Gamma * OI * 100
+            # GEX Scaling: Matches TradingEdge exact formula (Gamma * OI * 100 * Spot^2)
             # Both Call and Put GEX are recorded as positive unsigned magnitudes
-            contract_gex = 0.01 * (spot ** 2) * gamma * oi * 100.0
+            contract_gex = (spot ** 2) * gamma * oi * 100.0
 
-            # DEX Scaling: Dollar Delta: Delta * OI * 100 * Spot
+            # DEX Scaling: Dollar Delta matches TradingEdge (Delta * OI * 100 * Spot)
             contract_dex = delta * oi * 100.0 * spot
 
             if k not in strike_exp_map:
