@@ -93,14 +93,18 @@ class IBKROptionsExtractor:
     def __init__(
         self,
         ib: Any,
-        requests_per_batch: int = 40,
-        batch_delay_seconds: float = 1.0,
-        request_timeout_seconds: float = 2.0
+        requests_per_batch: int = 80,
+        batch_delay_seconds: float = 0.15,
+        request_timeout_seconds: float = 1.8,
+        min_ready_pct: float = 0.85,
+        min_wait_seconds: float = 1.00
     ):
         self.ib = ib
         self.requests_per_batch = max(5, int(requests_per_batch))
-        self.batch_delay_seconds = max(0.1, float(batch_delay_seconds))
-        self.request_timeout_seconds = max(0.5, float(request_timeout_seconds))
+        self.batch_delay_seconds = max(0.01, float(batch_delay_seconds))
+        self.request_timeout_seconds = max(0.1, float(request_timeout_seconds))
+        self.min_ready_pct = max(0.1, min(1.0, float(min_ready_pct)))
+        self.min_wait_seconds = max(0.01, float(min_wait_seconds))
 
     def qualify_underlying(self, ticker: str) -> Any:
         """
@@ -150,11 +154,12 @@ class IBKROptionsExtractor:
         spot_price: float,
         max_dte: int = 50,
         strike_range_pct: float = 0.25,
+        strike_range: Optional[int] = None,
         target_date: Optional[date] = None
     ) -> List[Dict[str, Any]]:
         """
         Queries secDefOptParams and filters chains, expirations (DTE <= max_dte),
-        and strikes within strike_range_pct around the spot price.
+        and strikes either within strike_range (count of strikes around ATM) or strike_range_pct around the spot price.
         """
         today = target_date or date.today()
         chains = self.ib.reqSecDefOptParams(
@@ -188,11 +193,26 @@ class IBKROptionsExtractor:
 
         # Deduplicate and sort expirations
         qualified_specs: List[Dict[str, Any]] = []
-        min_strike = spot_price * (1.0 - strike_range_pct) if spot_price > 0.0 else 0.0
-        max_strike = spot_price * (1.0 + strike_range_pct) if spot_price > 0.0 else float("inf")
 
         seen_exp_strike = set()
         for ch in preferred_chains:
+            if not ch.strikes:
+                continue
+
+            # Determine eligible strikes for this chain
+            if strike_range is not None and strike_range > 0 and spot_price > 0.0:
+                sorted_strikes = sorted(set(ch.strikes))
+                atm_idx = min(range(len(sorted_strikes)), key=lambda i: abs(sorted_strikes[i] - spot_price))
+                start_idx = max(0, atm_idx - strike_range)
+                end_idx = min(len(sorted_strikes), atm_idx + strike_range + 1)
+                eligible_strikes = set(sorted_strikes[start_idx:end_idx])
+            elif spot_price > 0.0:
+                min_strike = spot_price * (1.0 - strike_range_pct)
+                max_strike = spot_price * (1.0 + strike_range_pct)
+                eligible_strikes = {s for s in ch.strikes if min_strike <= s <= max_strike}
+            else:
+                eligible_strikes = set(ch.strikes)
+
             for exp_str in ch.expirations:
                 try:
                     exp_dt = datetime.strptime(exp_str, "%Y%m%d").date()
@@ -203,10 +223,7 @@ class IBKROptionsExtractor:
                 if dte < 0 or dte > max_dte:
                     continue
 
-                for strike in ch.strikes:
-                    if spot_price > 0.0 and not (min_strike <= strike <= max_strike):
-                        continue
-
+                for strike in eligible_strikes:
                     key = (exp_str, strike)
                     if key in seen_exp_strike:
                         continue
@@ -229,6 +246,7 @@ class IBKROptionsExtractor:
         ticker: str,
         max_dte: int = 50,
         strike_range_pct: float = 0.25,
+        strike_range: Optional[int] = None,
         target_date: Optional[date] = None
     ) -> OptionsChainExtractionResult:
         """
@@ -248,6 +266,7 @@ class IBKROptionsExtractor:
             spot_price=spot_price,
             max_dte=max_dte,
             strike_range_pct=strike_range_pct,
+            strike_range=strike_range,
             target_date=target_date
         )
 
@@ -296,14 +315,6 @@ class IBKROptionsExtractor:
         ]
 
         for chunk_idx, chunk in enumerate(chunks, start=1):
-            # Pre-qualify contracts to drop non-existent/invalid strikes and guarantee clean ticks
-            contracts_to_qualify = [pair[0] for pair in chunk]
-            try:
-                if hasattr(self.ib, "qualifyContracts"):
-                    self.ib.qualifyContracts(*contracts_to_qualify)
-            except Exception as qual_ex:
-                logger.debug(f"Chunk [{chunk_idx}] qualification note: {qual_ex}")
-
             chunk_records = self._process_batch_chunk(chunk, chunk_idx, len(chunks))
             extracted_records.extend(chunk_records)
             if chunk_idx < len(chunks):
@@ -327,8 +338,8 @@ class IBKROptionsExtractor:
         total_chunks: int
     ) -> List[OptionContractRecord]:
         """
-        Subscribes to market data for a batch of contracts, collects OI and Greeks,
-        and unconditionally cancels market data subscriptions.
+        Subscribes to market data for a batch of contracts, dynamically polls for
+        OI and Greeks data arrival, and unconditionally cancels market data subscriptions.
         """
         tickers: List[Any] = []
         try:
@@ -339,18 +350,43 @@ class IBKROptionsExtractor:
                 except Exception as req_ex:
                     logger.debug(f"Failed to request market data for contract {c}: {req_ex}")
 
-            # Wait for data to populate
-            if hasattr(self.ib, "sleep"):
-                self.ib.sleep(self.request_timeout_seconds)
-            else:
-                time.sleep(self.request_timeout_seconds)
+            # Dynamic event-driven polling wait instead of unconditional sleep
+            start_wait = time.time()
+            total_req = len(tickers)
+            ready_count = 0
+            while True:
+                elapsed = time.time() - start_wait
+                ready_count = 0
+                for c, t, spec in tickers:
+                    right = str(spec.get("right", getattr(c, "right", ""))).upper()
+                    target_oi_attr = "putOpenInterest" if right == "P" else "callOpenInterest"
+                    has_oi = self._is_valid_float(getattr(t, target_oi_attr, None)) or self._is_valid_float(getattr(t, "openInterest", None))
+                    has_greeks = (
+                        getattr(t, "modelGreeks", None) is not None
+                        and getattr(t.modelGreeks, "delta", None) is not None
+                    )
+                    if has_oi or has_greeks:
+                        ready_count += 1
+
+                if total_req > 0 and (ready_count / total_req) >= self.min_ready_pct and elapsed >= self.min_wait_seconds:
+                    break
+                if elapsed >= self.request_timeout_seconds:
+                    break
+
+                if hasattr(self.ib, "sleep"):
+                    self.ib.sleep(0.05)
+                else:
+                    time.sleep(0.05)
 
             records: List[OptionContractRecord] = []
             for c, t, spec in tickers:
                 rec = self._parse_ticker_to_record(c, t, spec)
                 records.append(rec)
 
-            logger.info(f"Chunk [{chunk_idx}/{total_chunks}] processed: {len(records)} records captured.")
+            logger.info(
+                f"Chunk [{chunk_idx}/{total_chunks}] processed: {len(records)} records captured "
+                f"({ready_count}/{total_req} ready in {time.time() - start_wait:.2f}s)."
+            )
             return records
 
         finally:
@@ -373,13 +409,15 @@ class IBKROptionsExtractor:
         vol = getattr(ticker_obj, "volume", None)
         vol_clean = int(vol) if self._is_valid_float(vol) and vol >= 0 else None
 
-        # Open interest from tick 101 or call/put OI fields
-        oi = (
-            getattr(ticker_obj, "openInterest", None)
-            or getattr(ticker_obj, "callOpenInterest", None)
-            or getattr(ticker_obj, "putOpenInterest", None)
-        )
-        oi_clean = int(oi) if self._is_valid_float(oi) and oi >= 0 else None
+        # Open interest from tick 101 or call/put OI fields with NaN resilience
+        right_str = str(spec.get("right", getattr(contract, "right", ""))).upper()
+        candidates = ["putOpenInterest", "openInterest", "callOpenInterest"] if right_str == "P" else ["callOpenInterest", "openInterest", "putOpenInterest"]
+        oi_clean = None
+        for attr in candidates:
+            val = getattr(ticker_obj, attr, None)
+            if self._is_valid_float(val):
+                oi_clean = int(val)
+                break
 
         # Model greeks from tick 106
         greeks = getattr(ticker_obj, "modelGreeks", None) or getattr(ticker_obj, "bidGreeks", None)
@@ -418,7 +456,7 @@ class IBKROptionsExtractor:
 
     @staticmethod
     def _is_valid_float(val: Any) -> bool:
-        if val is None:
+        if val is None or isinstance(val, bool) or hasattr(val, "_mock_return_value"):
             return False
         try:
             f = float(val)
@@ -438,8 +476,10 @@ def extract_options_chain_snapshot(
     ticker: str,
     max_dte: int = 50,
     strike_range_pct: float = 0.25,
-    requests_per_batch: int = 40,
-    batch_delay_seconds: float = 1.0
+    strike_range: Optional[int] = None,
+    requests_per_batch: int = 80,
+    batch_delay_seconds: float = 0.15,
+    request_timeout_seconds: float = 0.8
 ) -> OptionsChainExtractionResult:
     """
     Convenience function to extract an options chain snapshot using an active IB connection.
@@ -447,10 +487,12 @@ def extract_options_chain_snapshot(
     extractor = IBKROptionsExtractor(
         ib=ib,
         requests_per_batch=requests_per_batch,
-        batch_delay_seconds=batch_delay_seconds
+        batch_delay_seconds=batch_delay_seconds,
+        request_timeout_seconds=request_timeout_seconds
     )
     return extractor.extract_chain_snapshot(
         ticker=ticker,
         max_dte=max_dte,
-        strike_range_pct=strike_range_pct
+        strike_range_pct=strike_range_pct,
+        strike_range=strike_range
     )

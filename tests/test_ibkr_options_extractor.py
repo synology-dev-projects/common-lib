@@ -109,6 +109,34 @@ def test_select_chains_and_strikes_dte_and_range_filtering():
     assert strikes_present == {80.0, 100.0, 120.0}
 
 
+def test_select_chains_and_strikes_with_strike_range_count():
+    mock_ib = MagicMock()
+    mock_chain = MagicMock()
+    mock_chain.exchange = "SMART"
+    mock_chain.multiplier = "100"
+    mock_chain.expirations = ["20261120"]
+    # 7 strikes: 70, 80, 90, 100, 110, 120, 130
+    mock_chain.strikes = [70.0, 80.0, 90.0, 100.0, 110.0, 120.0, 130.0]
+    mock_ib.reqSecDefOptParams.return_value = [mock_chain]
+
+    extractor = IBKROptionsExtractor(ib=mock_ib)
+    underlying = MagicMock(symbol="XYZ", secType="STK", conId=123)
+
+    # Spot is 102.0. Closest ATM strike is 100.0 (index 3).
+    # strike_range = 2 -> takes indices 1..5: [80.0, 90.0, 100.0, 110.0, 120.0] (5 strikes)
+    specs = extractor.select_chains_and_strikes(
+        underlying,
+        spot_price=102.0,
+        max_dte=50,
+        strike_range=2,
+        target_date=date(2026, 10, 22)
+    )
+
+    assert len(specs) == 5
+    strikes_present = sorted([s["strike"] for s in specs])
+    assert strikes_present == [80.0, 90.0, 100.0, 110.0, 120.0]
+
+
 def test_extract_chain_snapshot_chunks_and_collects():
     mock_ib = MagicMock()
     mock_underlying = MagicMock(symbol="SPY", secType="STK", conId=756733)
@@ -201,3 +229,41 @@ def test_sanitize_float_and_missing_greeks():
     assert extractor._sanitize_float(float("nan")) is None
     assert extractor._sanitize_float(float("inf")) is None
     assert extractor._sanitize_float("invalid") is None
+
+
+def test_process_batch_chunk_dynamic_polling_early_exit():
+    mock_ib = MagicMock()
+    # Mock ticker with ready greeks
+    mock_ticker = MagicMock()
+    mock_ticker.modelGreeks = MagicMock(
+        impliedVol=0.20,
+        delta=0.5,
+        gamma=0.01,
+        vega=0.1,
+        theta=-0.05,
+        undPrice=500.0
+    )
+    mock_ticker.openInterest = 100
+    mock_ticker.volume = 50
+    mock_ticker.bid = 5.0
+    mock_ticker.ask = 5.2
+    mock_ticker.last = 5.1
+    mock_ib.reqMktData.return_value = mock_ticker
+
+    extractor = IBKROptionsExtractor(
+        ib=mock_ib,
+        requests_per_batch=10,
+        request_timeout_seconds=5.0,  # Long timeout
+        min_wait_seconds=0.01,
+        min_ready_pct=0.8
+    )
+
+    contract_pairs = [(MagicMock(), {"symbol": "SPY", "strike": 500.0, "dte": 10})]
+    start_time = datetime.now()
+    records = extractor._process_batch_chunk(contract_pairs, 1, 1)
+    elapsed = (datetime.now() - start_time).total_seconds()
+
+    # Dynamic polling should exit almost immediately (< 1.0s), NOT sleep full 5.0s
+    assert len(records) == 1
+    assert elapsed < 1.0
+
