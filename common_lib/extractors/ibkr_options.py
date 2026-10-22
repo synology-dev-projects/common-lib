@@ -168,10 +168,14 @@ class IBKROptionsExtractor:
             logger.warning(f"No option parameter chains returned for {underlying_contract.symbol}")
             return []
 
-        # Filter preferred chain by exchange
+        # Filter preferred chain by exchange and tradingClass
         is_index = underlying_contract.symbol in INDEX_SYMBOLS
+        sym = underlying_contract.symbol
         preferred_chains = []
         for ch in chains:
+            # Avoid mini/non-standard option classes like 2SPY
+            if ch.tradingClass and ch.tradingClass != sym and not is_index:
+                continue
             if is_index:
                 if ch.exchange in ("SMART", "CBOE"):
                     preferred_chains.append(ch)
@@ -276,6 +280,13 @@ class IBKROptionsExtractor:
             f"Extracting {len(all_contract_pairs)} option contracts for {ticker} "
             f"(Chunk Size: {self.requests_per_batch}, Delay: {self.batch_delay_seconds}s)..."
         )
+
+        # Enable Delayed-Frozen data (4) when outside market hours for Greeks/IV
+        if hasattr(self.ib, "reqMarketDataType"):
+            try:
+                self.ib.reqMarketDataType(4)
+            except Exception as dt_ex:
+                logger.debug(f"Could not set market data type 4: {dt_ex}")
 
         # Batch request market data with generic ticks: 101 (OI) and 106 (Greeks)
         extracted_records: List[OptionContractRecord] = []
