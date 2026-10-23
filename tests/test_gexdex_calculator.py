@@ -7,7 +7,8 @@ from common_lib.extractors.ibkr_options import OptionContractRecord
 from common_lib.calculators.gexdex import (
     GexDexCalculator,
     calculate_gexdex_distribution,
-    bsm_delta_gamma
+    bsm_delta_gamma,
+    IncompleteOptionChainError
 )
 from common_lib.connectors.tradingedge.dexgex import (
     convert_raw_to_df,
@@ -83,8 +84,8 @@ def test_calculate_gexdex_distribution_synthetic_chain():
         assert "2026-11-20" in s["expirations"]
 
 
-def test_calculate_gexdex_distribution_missing_greeks_triggers_bsm_fallback():
-    # Contracts with None Greeks & IV
+def test_calculate_gexdex_distribution_missing_greeks_raises_incomplete_error():
+    # Contracts with None Greeks & IV (Zero Synthetic Fallback & Ticker-Level Atomicity)
     contracts = [
         OptionContractRecord(
             ticker="QQQ", strike=450.0, expiration="20261115", right="C", dte=24,
@@ -96,17 +97,17 @@ def test_calculate_gexdex_distribution_missing_greeks_triggers_bsm_fallback():
         )
     ]
 
-    payload = calculate_gexdex_distribution(
-        contracts=contracts,
-        spot_price=450.0,
-        ticker="QQQ"
-    )
+    with pytest.raises(IncompleteOptionChainError) as exc_info:
+        calculate_gexdex_distribution(
+            contracts=contracts,
+            spot_price=450.0,
+            ticker="QQQ"
+        )
 
-    assert payload["ticker"] == "QQQ"
-    assert payload["total_call_gex"] > 0.0
-    assert payload["total_put_gex"] > 0.0
-    assert payload["total_call_dex"] > 0.0
-    assert payload["total_put_dex"] > 0.0
+    err = exc_info.value
+    assert err.ticker == "QQQ"
+    assert len(err.missing_contracts) == 2
+    assert "Ticker-level atomicity violation" in str(err)
 
 
 def test_output_is_fully_compatible_with_convert_raw_to_df_and_chart():

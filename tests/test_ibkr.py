@@ -46,7 +46,7 @@ def test_safe_ib_connection_client_id_fallback():
     mock_ib = MagicMock()
     attempts = []
 
-    def mock_connect(host, port, clientId, timeout):
+    def mock_connect(host, port, clientId, timeout, **kwargs):
         attempts.append(clientId)
         if clientId == 1:
             raise ConnectionError("Error 326: client id is already in use")

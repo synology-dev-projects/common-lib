@@ -48,6 +48,15 @@ class SafeIBConnection:
             self.ib = ib_instance
         elif IB is not None:
             self.ib = IB()
+            self.ib.MaxSyncedSubAccounts = 0
+            async def _noop_req(*_a, **_kw):
+                return []
+            self.ib.reqPositionsAsync = _noop_req
+            self.ib.reqExecutionsAsync = _noop_req
+            self.ib.reqOpenOrdersAsync = _noop_req
+            self.ib.reqCompletedOrdersAsync = _noop_req
+            self.ib.reqAccountUpdatesAsync = _noop_req
+            self.ib.reqAccountUpdatesMultiAsync = _noop_req
         else:
             raise ImportError("ib_insync is not installed in current environment.")
         self.connected_client_id: Optional[int] = None
@@ -58,7 +67,7 @@ class SafeIBConnection:
             client_id = self.base_client_id + offset
             try:
                 logger.info(f"[IBKR] Attempting connection to {self.host}:{self.port} with clientId={client_id}")
-                self.ib.connect(self.host, self.port, clientId=client_id, timeout=self.timeout)
+                self.ib.connect(self.host, self.port, clientId=client_id, timeout=self.timeout, readonly=True)
                 is_conn = getattr(self.ib, "isConnected", None)
                 if is_conn is None or is_conn():
                     self.connected_client_id = client_id

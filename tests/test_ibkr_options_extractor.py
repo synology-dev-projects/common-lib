@@ -210,7 +210,15 @@ def test_extract_chain_snapshot_chunks_and_collects():
 
 def test_process_batch_chunk_unconditional_cancel_on_error():
     mock_ib = MagicMock()
-    mock_ib.sleep.side_effect = RuntimeError("Simulated timeout or network glitch")
+    call_count = 0
+
+    def mock_sleep(sec):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 3:
+            raise RuntimeError("Simulated timeout or network glitch")
+
+    mock_ib.sleep.side_effect = mock_sleep
 
     extractor = IBKROptionsExtractor(ib=mock_ib, request_timeout_seconds=0.01)
     contract_pairs = [(MagicMock(), {}), (MagicMock(), {})]

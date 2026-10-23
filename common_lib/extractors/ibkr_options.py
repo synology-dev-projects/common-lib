@@ -3,7 +3,7 @@ import math
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
-from typing import List, Dict, Any, Optional, Set, Sequence
+from typing import List, Dict, Any, Optional, Set, Sequence, Tuple
 
 try:
     import asyncio
@@ -93,11 +93,11 @@ class IBKROptionsExtractor:
     def __init__(
         self,
         ib: Any,
-        requests_per_batch: int = 80,
-        batch_delay_seconds: float = 0.15,
-        request_timeout_seconds: float = 1.8,
-        min_ready_pct: float = 0.85,
-        min_wait_seconds: float = 1.00
+        requests_per_batch: int = 40,
+        batch_delay_seconds: float = 1.0,
+        request_timeout_seconds: float = 3.5,
+        min_ready_pct: float = 0.90,
+        min_wait_seconds: float = 1.20
     ):
         self.ib = ib
         self.requests_per_batch = max(5, int(requests_per_batch))
@@ -155,7 +155,8 @@ class IBKROptionsExtractor:
         max_dte: int = 50,
         strike_range_pct: float = 0.25,
         strike_range: Optional[int] = None,
-        target_date: Optional[date] = None
+        target_date: Optional[date] = None,
+        allowed_exp_strikes: Optional[Set[Tuple[str, float]]] = None
     ) -> List[Dict[str, Any]]:
         """
         Queries secDefOptParams and filters chains, expirations (DTE <= max_dte),
@@ -179,7 +180,7 @@ class IBKROptionsExtractor:
         preferred_chains = []
         for ch in chains:
             # Avoid mini/non-standard option classes like 2SPY
-            if ch.tradingClass and ch.tradingClass != sym and not is_index:
+            if getattr(ch, "tradingClass", None) and ch.tradingClass != sym and not is_index:
                 continue
             if is_index:
                 if ch.exchange in ("SMART", "CBOE"):
@@ -199,9 +200,17 @@ class IBKROptionsExtractor:
             if not ch.strikes:
                 continue
 
+            # Filter out corporate-action non-standard decimal strikes (e.g. .59)
+            standard_strikes = [
+                float(s) for s in ch.strikes
+                if round(float(s) * 2.0, 4) == int(round(float(s) * 2.0, 4))
+            ]
+            if not standard_strikes:
+                standard_strikes = [float(s) for s in ch.strikes]
+
             # Determine eligible strikes for this chain
             if strike_range is not None and strike_range > 0 and spot_price > 0.0:
-                sorted_strikes = sorted(set(ch.strikes))
+                sorted_strikes = sorted(set(standard_strikes))
                 atm_idx = min(range(len(sorted_strikes)), key=lambda i: abs(sorted_strikes[i] - spot_price))
                 start_idx = max(0, atm_idx - strike_range)
                 end_idx = min(len(sorted_strikes), atm_idx + strike_range + 1)
@@ -209,9 +218,9 @@ class IBKROptionsExtractor:
             elif spot_price > 0.0:
                 min_strike = spot_price * (1.0 - strike_range_pct)
                 max_strike = spot_price * (1.0 + strike_range_pct)
-                eligible_strikes = {s for s in ch.strikes if min_strike <= s <= max_strike}
+                eligible_strikes = {s for s in standard_strikes if min_strike <= s <= max_strike}
             else:
-                eligible_strikes = set(ch.strikes)
+                eligible_strikes = set(standard_strikes)
 
             for exp_str in ch.expirations:
                 try:
@@ -224,7 +233,9 @@ class IBKROptionsExtractor:
                     continue
 
                 for strike in eligible_strikes:
-                    key = (exp_str, strike)
+                    key = (exp_str, float(strike))
+                    if allowed_exp_strikes is not None and key not in allowed_exp_strikes:
+                        continue
                     if key in seen_exp_strike:
                         continue
                     seen_exp_strike.add(key)
@@ -247,33 +258,62 @@ class IBKROptionsExtractor:
         max_dte: int = 50,
         strike_range_pct: float = 0.25,
         strike_range: Optional[int] = None,
-        target_date: Optional[date] = None
+        target_date: Optional[date] = None,
+        known_spot_price: Optional[float] = None,
+        allowed_exp_strikes: Optional[Set[Tuple[str, float]]] = None
     ) -> OptionsChainExtractionResult:
         """
         Executes end-to-end extraction for a ticker:
-        1. Qualifies underlying contract.
+        1. Qualifies underlying contract (or uses known_spot_price + allowed_exp_strikes).
         2. Resolves spot price.
         3. Identifies eligible options within DTE and strike boundaries.
         4. Paces market data requests (101: OI, 106: Greeks) in bounded chunks.
         5. Compiles and returns normalized OptionContractRecord models.
         """
         now_iso = datetime.now(timezone.utc).isoformat()
-        underlying = self.qualify_underlying(ticker)
-        spot_price = self.fetch_spot_price(underlying)
+        sym = ticker.upper().strip()
+        is_index = sym in INDEX_SYMBOLS
+        today = target_date or date.today()
 
-        specs = self.select_chains_and_strikes(
-            underlying,
-            spot_price=spot_price,
-            max_dte=max_dte,
-            strike_range_pct=strike_range_pct,
-            strike_range=strike_range,
-            target_date=target_date
-        )
+        if known_spot_price is not None and known_spot_price > 0.0 and allowed_exp_strikes:
+            spot_price = float(known_spot_price)
+            specs: List[Dict[str, Any]] = []
+            for exp_str, strike_val in sorted(allowed_exp_strikes):
+                clean_exp = str(exp_str).replace("-", "").strip()
+                try:
+                    exp_dt = datetime.strptime(clean_exp, "%Y%m%d").date()
+                    dte = (exp_dt - today).days
+                except (ValueError, TypeError):
+                    continue
+                if dte < 0 or dte > max_dte:
+                    continue
+                specs.append({
+                    "symbol": sym,
+                    "expiration": clean_exp,
+                    "strike": float(strike_val),
+                    "dte": dte,
+                    "multiplier": "100",
+                    "exchange": "CBOE" if is_index else "SMART"
+                })
+            specs.sort(key=lambda s: (s["dte"], s["strike"]))
+        else:
+            underlying = self.qualify_underlying(ticker)
+            spot_price = float(known_spot_price) if (known_spot_price and known_spot_price > 0.0) else self.fetch_spot_price(underlying)
+
+            specs = self.select_chains_and_strikes(
+                underlying,
+                spot_price=spot_price,
+                max_dte=max_dte,
+                strike_range_pct=strike_range_pct,
+                strike_range=strike_range,
+                target_date=target_date,
+                allowed_exp_strikes=allowed_exp_strikes
+            )
 
         if not specs:
             logger.warning(f"No option specifications matched filters for {ticker}.")
             return OptionsChainExtractionResult(
-                ticker=ticker.upper(),
+                ticker=sym,
                 spot_price=spot_price,
                 timestamp=now_iso,
                 total_contracts_extracted=0,
@@ -291,7 +331,8 @@ class IBKROptionsExtractor:
                     spec["strike"],
                     right,
                     spec["exchange"],
-                    multiplier=spec["multiplier"]
+                    multiplier=spec["multiplier"],
+                    currency="USD"
                 )
                 all_contract_pairs.append((opt, {**spec, "right": right}))
 
@@ -323,8 +364,25 @@ class IBKROptionsExtractor:
                 else:
                     time.sleep(self.batch_delay_seconds)
 
+        # Straggler retry pass for active contracts where OI arrived (> 0) but modelGreeks timed out
+        straggler_indices = [
+            idx for idx, rec in enumerate(extracted_records)
+            if (rec.open_interest or 0) > 0 and rec.gamma is None and idx < len(all_contract_pairs)
+        ]
+        if 0 < len(straggler_indices) <= self.requests_per_batch:
+            logger.info(f"Running straggler retry pass for {len(straggler_indices)} contracts missing modelGreeks...")
+            if hasattr(self.ib, "sleep"):
+                self.ib.sleep(self.batch_delay_seconds)
+            else:
+                time.sleep(self.batch_delay_seconds)
+            retry_pairs = [all_contract_pairs[i] for i in straggler_indices]
+            retry_records = self._process_batch_chunk(retry_pairs, 1, 1)
+            for idx, r_rec in zip(straggler_indices, retry_records):
+                if r_rec.gamma is not None or r_rec.implied_vol is not None:
+                    extracted_records[idx] = r_rec
+
         return OptionsChainExtractionResult(
-            ticker=ticker.upper(),
+            ticker=sym,
             spot_price=spot_price,
             timestamp=now_iso,
             total_contracts_extracted=len(extracted_records),
@@ -339,7 +397,7 @@ class IBKROptionsExtractor:
     ) -> List[OptionContractRecord]:
         """
         Subscribes to market data for a batch of contracts, dynamically polls for
-        OI and Greeks data arrival, and unconditionally cancels market data subscriptions.
+        BOTH OI and Greeks data arrival, and unconditionally cancels market data subscriptions.
         """
         tickers: List[Any] = []
         try:
@@ -347,6 +405,10 @@ class IBKROptionsExtractor:
                 try:
                     t = self.ib.reqMktData(c, "101,106", False, False)
                     tickers.append((c, t, spec))
+                    if hasattr(self.ib, "sleep"):
+                        self.ib.sleep(0.025)
+                    else:
+                        time.sleep(0.025)
                 except Exception as req_ex:
                     logger.debug(f"Failed to request market data for contract {c}: {req_ex}")
 
@@ -365,7 +427,7 @@ class IBKROptionsExtractor:
                         getattr(t, "modelGreeks", None) is not None
                         and getattr(t.modelGreeks, "delta", None) is not None
                     )
-                    if has_oi or has_greeks:
+                    if has_oi and has_greeks:
                         ready_count += 1
 
                 if total_req > 0 and (ready_count / total_req) >= self.min_ready_pct and elapsed >= self.min_wait_seconds:
@@ -393,6 +455,10 @@ class IBKROptionsExtractor:
             # Unconditional teardown: cancel all subscriptions in chunk
             for item in tickers:
                 self._safe_cancel_mkt_data(item[0])
+                if hasattr(self.ib, "sleep"):
+                    self.ib.sleep(0.01)
+                else:
+                    time.sleep(0.01)
 
     def _parse_ticker_to_record(
         self,
@@ -419,8 +485,13 @@ class IBKROptionsExtractor:
                 oi_clean = int(val)
                 break
 
-        # Model greeks from tick 106
-        greeks = getattr(ticker_obj, "modelGreeks", None) or getattr(ticker_obj, "bidGreeks", None)
+        # Model greeks from tick 106 (with fallback to bidGreeks / askGreeks / lastGreeks)
+        greeks = (
+            getattr(ticker_obj, "modelGreeks", None)
+            or getattr(ticker_obj, "bidGreeks", None)
+            or getattr(ticker_obj, "askGreeks", None)
+            or getattr(ticker_obj, "lastGreeks", None)
+        )
         iv = self._sanitize_float(getattr(greeks, "impliedVol", None))
         delta = self._sanitize_float(getattr(greeks, "delta", None))
         gamma = self._sanitize_float(getattr(greeks, "gamma", None))
@@ -477,9 +548,9 @@ def extract_options_chain_snapshot(
     max_dte: int = 50,
     strike_range_pct: float = 0.25,
     strike_range: Optional[int] = None,
-    requests_per_batch: int = 80,
-    batch_delay_seconds: float = 0.15,
-    request_timeout_seconds: float = 0.8
+    requests_per_batch: int = 40,
+    batch_delay_seconds: float = 1.0,
+    request_timeout_seconds: float = 3.5
 ) -> OptionsChainExtractionResult:
     """
     Convenience function to extract an options chain snapshot using an active IB connection.

@@ -14,6 +14,14 @@ class StrikeComparisonRow:
     ibkr_put_gex: float
     te_net_gex: float
     ibkr_net_gex: float
+    gex_diff_pct: float = 0.0
+    te_call_dex: float = 0.0
+    ibkr_call_dex: float = 0.0
+    te_put_dex: float = 0.0
+    ibkr_put_dex: float = 0.0
+    te_net_dex: float = 0.0
+    ibkr_net_dex: float = 0.0
+    dex_diff_pct: float = 0.0
 
 
 @dataclass
@@ -25,18 +33,22 @@ class ShadowComparisonResult:
     ibkr_net_gex: float
     net_gex_diff_pct: float
     gex_pearson_r: float
-    te_call_wall: float
-    ibkr_call_wall: float
-    call_wall_matched: bool
-    te_put_wall: float
-    ibkr_put_wall: float
-    put_wall_matched: bool
-    te_zero_flip: float
-    ibkr_zero_flip: float
-    zero_flip_diff_pct: float
-    regime_matched: bool
-    total_aligned_strikes: int
-    ibkr_contracts_count: int
+    te_net_dex: float = 0.0
+    ibkr_net_dex: float = 0.0
+    net_dex_diff_pct: float = 0.0
+    dex_pearson_r: float = 0.0
+    te_call_wall: float = 0.0
+    ibkr_call_wall: float = 0.0
+    call_wall_matched: bool = False
+    te_put_wall: float = 0.0
+    ibkr_put_wall: float = 0.0
+    put_wall_matched: bool = False
+    te_zero_flip: float = 0.0
+    ibkr_zero_flip: float = 0.0
+    zero_flip_diff_pct: float = 0.0
+    regime_matched: bool = False
+    total_aligned_strikes: int = 0
+    ibkr_contracts_count: int = 0
     strike_rows: List[StrikeComparisonRow] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -48,6 +60,10 @@ class ShadowComparisonResult:
             "ibkr_net_gex": self.ibkr_net_gex,
             "net_gex_diff_pct": self.net_gex_diff_pct,
             "gex_pearson_r": self.gex_pearson_r,
+            "te_net_dex": self.te_net_dex,
+            "ibkr_net_dex": self.ibkr_net_dex,
+            "net_dex_diff_pct": self.net_dex_diff_pct,
+            "dex_pearson_r": self.dex_pearson_r,
             "te_call_wall": self.te_call_wall,
             "ibkr_call_wall": self.ibkr_call_wall,
             "call_wall_matched": self.call_wall_matched,
@@ -68,7 +84,15 @@ class ShadowComparisonResult:
                     "te_put_gex": r.te_put_gex,
                     "ibkr_put_gex": r.ibkr_put_gex,
                     "te_net_gex": r.te_net_gex,
-                    "ibkr_net_gex": r.ibkr_net_gex
+                    "ibkr_net_gex": r.ibkr_net_gex,
+                    "gex_diff_pct": r.gex_diff_pct,
+                    "te_call_dex": r.te_call_dex,
+                    "ibkr_call_dex": r.ibkr_call_dex,
+                    "te_put_dex": r.te_put_dex,
+                    "ibkr_put_dex": r.ibkr_put_dex,
+                    "te_net_dex": r.te_net_dex,
+                    "ibkr_net_dex": r.ibkr_net_dex,
+                    "dex_diff_pct": r.dex_diff_pct
                 }
                 for r in self.strike_rows
             ]
@@ -100,6 +124,46 @@ def calc_pearson_correlation(vec_x: List[float], vec_y: List[float]) -> float:
     return max(-1.0, min(1.0, r))
 
 
+def _calc_diff_pct(base_val: float, comp_val: float) -> float:
+    if abs(base_val) > 1e-4:
+        return min(999999.99, round((abs(base_val - comp_val) / abs(base_val)) * 100.0, 2))
+    elif abs(comp_val) > 1e-4:
+        return min(999999.99, round((abs(comp_val - base_val) / abs(comp_val)) * 100.0, 2))
+    return 0.0
+
+
+def _extract_strike_metrics(strike_obj: Dict[str, Any]) -> Tuple[float, float, float, float, float, float]:
+    """
+    Extracts (call_gex, put_gex_signed, net_gex, call_dex, put_dex_signed, net_dex)
+    from either top-level strike keys or nested expirations dictionary.
+    Normalizes put_gex and put_dex to signed negative values matching TradingEdge.
+    """
+    exps = strike_obj.get("expirations", {}) or {}
+    cg = strike_obj.get("call_gex")
+    pg = strike_obj.get("put_gex")
+    cd = strike_obj.get("call_dex")
+    pd_val = strike_obj.get("put_dex")
+
+    if cg is None and exps:
+        cg = sum(float(v.get("call_gex") or 0.0) for v in exps.values())
+    if pg is None and exps:
+        pg = sum(-abs(float(v.get("put_gex") or 0.0)) for v in exps.values())
+    if cd is None and exps:
+        cd = sum(float(v.get("call_dex") or 0.0) for v in exps.values())
+    if pd_val is None and exps:
+        pd_val = sum(-abs(float(v.get("put_dex") or 0.0)) for v in exps.values())
+
+    cg_f = abs(float(cg or 0.0))
+    pg_f = -abs(float(pg or 0.0))
+    net_gex_f = cg_f + pg_f
+
+    cd_f = abs(float(cd or 0.0))
+    pd_f = -abs(float(pd_val or 0.0))
+    net_dex_f = cd_f + pd_f
+
+    return round(cg_f, 2), round(pg_f, 2), round(net_gex_f, 2), round(cd_f, 2), round(pd_f, 2), round(net_dex_f, 2)
+
+
 def compare_gexdex_payloads(
     te_payload: Dict[str, Any],
     ibkr_payload: Dict[str, Any],
@@ -107,22 +171,64 @@ def compare_gexdex_payloads(
 ) -> ShadowComparisonResult:
     """
     Computes comprehensive mathematical agreement between TradingEdge baseline
-    and IBKR shadow calculation.
+    and IBKR shadow calculation across both GEX and DEX.
     """
     ticker = str(ibkr_payload.get("ticker") or te_payload.get("ticker") or "UNKNOWN").upper()
     run_date_str = str(target_date or date.today())
     spot = float(ibkr_payload.get("spot_price") or te_payload.get("spot_price") or 0.0)
 
-    te_net_gex = float(te_payload.get("net_gex", 0.0) or 0.0)
-    ibkr_net_gex = float(ibkr_payload.get("net_gex", 0.0) or 0.0)
+    # Strike-by-strike alignment
+    te_strikes = {float(s["strike"]): s for s in te_payload.get("strikes", []) if "strike" in s}
+    ibkr_strikes = {float(s["strike"]): s for s in ibkr_payload.get("strikes", []) if "strike" in s}
 
-    # Calculate percentage difference bounded to prevent numeric overflow
-    if abs(te_net_gex) > 1e-4:
-        net_gex_diff_pct = min(999999.99, round((abs(te_net_gex - ibkr_net_gex) / abs(te_net_gex)) * 100.0, 2))
-    elif abs(ibkr_net_gex) > 1e-4:
-        net_gex_diff_pct = min(999999.99, round((abs(ibkr_net_gex - te_net_gex) / abs(ibkr_net_gex)) * 100.0, 2))
-    else:
-        net_gex_diff_pct = 0.0
+    common_strikes = sorted(set(te_strikes.keys()).intersection(ibkr_strikes.keys()))
+
+    te_gex_vec: List[float] = []
+    ibkr_gex_vec: List[float] = []
+    te_dex_vec: List[float] = []
+    ibkr_dex_vec: List[float] = []
+    strike_rows: List[StrikeComparisonRow] = []
+
+    sum_te_net_dex = 0.0
+    sum_ibkr_net_dex = 0.0
+
+    for k in common_strikes:
+        tcg, tpg, tnet_gex, tcd, tpd, tnet_dex = _extract_strike_metrics(te_strikes[k])
+        icg, ipg, inet_gex, icd, ipd, inet_dex = _extract_strike_metrics(ibkr_strikes[k])
+
+        sum_te_net_dex += tnet_dex
+        sum_ibkr_net_dex += inet_dex
+
+        te_gex_vec.append(tnet_gex)
+        ibkr_gex_vec.append(inet_gex)
+        te_dex_vec.append(tnet_dex)
+        ibkr_dex_vec.append(inet_dex)
+
+        strike_rows.append(StrikeComparisonRow(
+            strike=k,
+            te_call_gex=tcg,
+            ibkr_call_gex=icg,
+            te_put_gex=tpg,
+            ibkr_put_gex=ipg,
+            te_net_gex=tnet_gex,
+            ibkr_net_gex=inet_gex,
+            gex_diff_pct=_calc_diff_pct(tnet_gex, inet_gex),
+            te_call_dex=tcd,
+            ibkr_call_dex=icd,
+            te_put_dex=tpd,
+            ibkr_put_dex=ipd,
+            te_net_dex=tnet_dex,
+            ibkr_net_dex=inet_dex,
+            dex_diff_pct=_calc_diff_pct(tnet_dex, inet_dex)
+        ))
+
+    te_net_gex = float(te_payload.get("net_gex") if te_payload.get("net_gex") is not None else sum(te_gex_vec))
+    ibkr_net_gex = float(ibkr_payload.get("net_gex") if ibkr_payload.get("net_gex") is not None else sum(ibkr_gex_vec))
+    net_gex_diff_pct = _calc_diff_pct(te_net_gex, ibkr_net_gex)
+
+    te_net_dex = float(te_payload.get("net_dex") if te_payload.get("net_dex") is not None else sum_te_net_dex)
+    ibkr_net_dex = float(ibkr_payload.get("net_dex") if ibkr_payload.get("net_dex") is not None else sum_ibkr_net_dex)
+    net_dex_diff_pct = _calc_diff_pct(te_net_dex, ibkr_net_dex)
 
     te_cw = float(te_payload.get("call_wall", 0.0) or 0.0)
     ibkr_cw = float(ibkr_payload.get("call_wall", 0.0) or 0.0)
@@ -139,42 +245,8 @@ def compare_gexdex_payloads(
 
     regime_matched = (te_net_gex >= 0 and ibkr_net_gex >= 0) or (te_net_gex < 0 and ibkr_net_gex < 0)
 
-    # Strike-by-strike alignment
-    te_strikes = {float(s["strike"]): s for s in te_payload.get("strikes", []) if "strike" in s}
-    ibkr_strikes = {float(s["strike"]): s for s in ibkr_payload.get("strikes", []) if "strike" in s}
-
-    common_strikes = sorted(set(te_strikes.keys()).intersection(ibkr_strikes.keys()))
-
-    te_gex_vec: List[float] = []
-    ibkr_gex_vec: List[float] = []
-    strike_rows: List[StrikeComparisonRow] = []
-
-    for k in common_strikes:
-        ts = te_strikes[k]
-        ibs = ibkr_strikes[k]
-
-        tcg = float(ts.get("call_gex", 0.0) or 0.0)
-        tpg = float(ts.get("put_gex", 0.0) or 0.0)
-        tnet = tcg - tpg
-
-        icg = float(ibs.get("call_gex", 0.0) or 0.0)
-        ipg = float(ibs.get("put_gex", 0.0) or 0.0)
-        inet = icg - ipg
-
-        te_gex_vec.append(tnet)
-        ibkr_gex_vec.append(inet)
-
-        strike_rows.append(StrikeComparisonRow(
-            strike=k,
-            te_call_gex=tcg,
-            ibkr_call_gex=icg,
-            te_put_gex=tpg,
-            ibkr_put_gex=ipg,
-            te_net_gex=tnet,
-            ibkr_net_gex=inet
-        ))
-
-    pearson_r = round(calc_pearson_correlation(te_gex_vec, ibkr_gex_vec), 4)
+    gex_pearson_r = round(calc_pearson_correlation(te_gex_vec, ibkr_gex_vec), 4)
+    dex_pearson_r = round(calc_pearson_correlation(te_dex_vec, ibkr_dex_vec), 4)
 
     ibkr_contracts_count = len(ibkr_payload.get("contracts", []))
     if ibkr_contracts_count == 0:
@@ -184,10 +256,14 @@ def compare_gexdex_payloads(
         ticker=ticker,
         run_date=run_date_str,
         spot_price=spot,
-        te_net_gex=te_net_gex,
-        ibkr_net_gex=ibkr_net_gex,
+        te_net_gex=round(te_net_gex, 2),
+        ibkr_net_gex=round(ibkr_net_gex, 2),
         net_gex_diff_pct=net_gex_diff_pct,
-        gex_pearson_r=pearson_r,
+        gex_pearson_r=gex_pearson_r,
+        te_net_dex=round(te_net_dex, 2),
+        ibkr_net_dex=round(ibkr_net_dex, 2),
+        net_dex_diff_pct=net_dex_diff_pct,
+        dex_pearson_r=dex_pearson_r,
         te_call_wall=te_cw,
         ibkr_call_wall=ibkr_cw,
         call_wall_matched=call_wall_matched,

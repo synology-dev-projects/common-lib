@@ -59,11 +59,23 @@ def bsm_delta_gamma(
 # In-Memory GEX/DEX Calculation Engine
 # ==============================================================================
 
+class IncompleteOptionChainError(RuntimeError):
+    """Raised when an options chain lacks real market Greeks (gamma/delta) for one or more contracts."""
+    def __init__(self, ticker: str, missing_contracts: List[str]):
+        self.ticker = ticker
+        self.missing_contracts = missing_contracts
+        sample = missing_contracts[:5]
+        super().__init__(
+            f"Ticker-level atomicity violation for {ticker}: "
+            f"{len(missing_contracts)} contract(s) missing real market Greeks: {sample}"
+        )
+
+
 class GexDexCalculator:
     """
     Calculates full options gamma & delta exposure distributions, structural walls,
     zero-flip level, and gamma centroid from option contracts.
-    Emits an unadulterated TradingEdge-compatible dictionary suitable for
+    Emits a 1:1 TradingEdge-compatible dictionary suitable for
     downstream storage, PWA cockpit APIs, and chart generation.
     """
     def __init__(
@@ -84,7 +96,8 @@ class GexDexCalculator:
         target_date: Optional[date] = None
     ) -> Dict[str, Any]:
         """
-        Computes GEX/DEX surface across strikes and expirations.
+        Computes GEX/DEX surface across strikes and expirations with 1:1 TradingEdge
+        aggregation and signed conventions.
         """
         sym = ticker.upper().strip()
         spot = float(spot_price)
@@ -97,8 +110,18 @@ class GexDexCalculator:
 
         today = target_date or date.today()
 
-        # Step 1: Process individual contracts and compute GEX/DEX
+        # Step 0: Enforce Ticker-Level Atomicity (Strict Zero Synthetic Fallback)
+        missing_contracts = []
+        for c in contracts:
+            if c.gamma is None or math.isnan(c.gamma) or c.delta is None or math.isnan(c.delta):
+                missing_contracts.append(f"{c.expiration} {c.strike} {c.right}")
+
+        if missing_contracts:
+            raise IncompleteOptionChainError(sym, missing_contracts)
+
+        # Step 1: Process individual contracts using 100% verified real market Greeks
         # Structure: strike -> expiration_str -> dict(metrics)
+        # TradingEdge convention in expirations: call_gex >= 0, put_gex <= 0, call_dex >= 0, put_dex <= 0
         strike_exp_map: Dict[float, Dict[str, Dict[str, float]]] = {}
         all_strikes_set = set()
 
@@ -109,24 +132,17 @@ class GexDexCalculator:
 
             all_strikes_set.add(k)
             exp_formatted = self._format_expiration_date(c.expiration)
-            dte = max(0, int(c.dte))
-            # Tau in years (calendar fraction)
-            tau = max(dte / 365.25, 0.5 / 365.25 if dte == 0 else 1e-4)
 
-            # Resolve Open Interest (fallback to volume if OI unavailable)
-            oi = float(c.open_interest or 0.0)
-            if oi <= 0.0 and c.volume and c.volume > 0:
-                oi = float(c.volume)
+            # Resolve Open Interest (only fallback to volume if open_interest is None, not 0)
+            if c.open_interest is not None and not math.isnan(c.open_interest):
+                oi = max(0.0, float(c.open_interest))
+            else:
+                oi = max(0.0, float(c.volume or 0.0))
 
-            # Resolve IV and Greeks with BSM fallback
-            iv = c.implied_vol if (c.implied_vol and c.implied_vol > 0.001) else self.fallback_iv
-            b_call_d, b_put_d, b_gamma = bsm_delta_gamma(spot, k, tau, iv, self.r, self.q)
-
-            delta = c.delta if (c.delta is not None and not math.isnan(c.delta)) else (b_call_d if c.right == "C" else b_put_d)
-            gamma = c.gamma if (c.gamma is not None and not math.isnan(c.gamma) and c.gamma > 0.0) else b_gamma
+            gamma = float(c.gamma)
+            delta = float(c.delta)
 
             # GEX Scaling: Matches TradingEdge exact formula (Gamma * OI * 100 * Spot^2)
-            # Both Call and Put GEX are recorded as positive unsigned magnitudes
             contract_gex = (spot ** 2) * gamma * oi * 100.0
 
             # DEX Scaling: Dollar Delta matches TradingEdge (Delta * OI * 100 * Spot)
@@ -143,14 +159,14 @@ class GexDexCalculator:
                 }
 
             if c.right == "C":
-                strike_exp_map[k][exp_formatted]["call_gex"] += contract_gex
-                strike_exp_map[k][exp_formatted]["call_dex"] += contract_dex
+                strike_exp_map[k][exp_formatted]["call_gex"] += abs(contract_gex)
+                strike_exp_map[k][exp_formatted]["call_dex"] += abs(contract_dex)
             else:
-                strike_exp_map[k][exp_formatted]["put_gex"] += contract_gex
-                # Put DEX stored as positive magnitude for consistency with call_put_ratio
-                strike_exp_map[k][exp_formatted]["put_dex"] += abs(contract_dex)
+                # TradingEdge stores put_gex and put_dex as signed negative values in expirations & rolling
+                strike_exp_map[k][exp_formatted]["put_gex"] -= abs(contract_gex)
+                strike_exp_map[k][exp_formatted]["put_dex"] -= abs(contract_dex)
 
-        # Step 2: Build strike-level aggregations
+        # Step 2: Build strike-level and cumulative rolling aggregations
         sorted_strikes = sorted(all_strikes_set)
         strikes_payload: List[Dict[str, Any]] = []
         rolling_strikes: List[float] = []
@@ -163,11 +179,19 @@ class GexDexCalculator:
         tot_put_gex = 0.0
         tot_call_dex = 0.0
         tot_put_dex = 0.0
+        above_spot_call_dex = 0.0
+
+        cum_cg = 0.0
+        cum_pg = 0.0
+        cum_cd = 0.0
+        cum_pd = 0.0
 
         max_cg = -1.0
         call_wall = spot
         max_pg = -1.0
         put_wall = spot
+        max_gex_abs = -1.0
+        gex_wall = spot
 
         strike_net_gex_map: Dict[float, float] = {}
         centroid_num = 0.0
@@ -176,16 +200,22 @@ class GexDexCalculator:
         for k in sorted_strikes:
             exp_dict = strike_exp_map.get(k, {})
             stk_cg = sum(m["call_gex"] for m in exp_dict.values())
-            stk_pg = sum(m["put_gex"] for m in exp_dict.values())
+            stk_pg_signed = sum(m["put_gex"] for m in exp_dict.values())   # <= 0
             stk_cd = sum(m["call_dex"] for m in exp_dict.values())
-            stk_pd = sum(m["put_dex"] for m in exp_dict.values())
+            stk_pd_signed = sum(m["put_dex"] for m in exp_dict.values())   # <= 0
+
+            stk_pg_mag = abs(stk_pg_signed)
+            stk_pd_mag = abs(stk_pd_signed)
 
             tot_call_gex += stk_cg
-            tot_put_gex += stk_pg
+            tot_put_gex += stk_pg_mag
             tot_call_dex += stk_cd
-            tot_put_dex += stk_pd
+            tot_put_dex += stk_pd_mag
+            if k > spot:
+                above_spot_call_dex += stk_cd
 
-            net_stk_gex = stk_cg - stk_pg
+            net_stk_gex = stk_cg + stk_pg_signed
+            net_stk_dex = stk_cd + stk_pd_signed
             strike_net_gex_map[k] = net_stk_gex
             abs_net = abs(net_stk_gex)
             centroid_num += k * abs_net
@@ -195,16 +225,22 @@ class GexDexCalculator:
             if stk_cg > max_cg:
                 max_cg = stk_cg
                 call_wall = k
-            if stk_pg > max_pg:
-                max_pg = stk_pg
+            if stk_pg_mag > max_pg:
+                max_pg = stk_pg_mag
                 put_wall = k
+            stk_dominant_gex = max(stk_cg, stk_pg_mag, abs_net)
+            if stk_dominant_gex > max_gex_abs:
+                max_gex_abs = stk_dominant_gex
+                gex_wall = k
 
             strikes_payload.append({
                 "strike": k,
                 "call_gex": round(stk_cg, 2),
-                "put_gex": round(stk_pg, 2),
+                "put_gex": round(stk_pg_signed, 2),
+                "net_gex": round(net_stk_gex, 2),
                 "call_dex": round(stk_cd, 2),
-                "put_dex": round(stk_pd, 2),
+                "put_dex": round(stk_pd_signed, 2),
+                "net_dex": round(net_stk_dex, 2),
                 "expirations": {
                     exp_k: {
                         "call_gex": round(v["call_gex"], 2),
@@ -216,11 +252,16 @@ class GexDexCalculator:
                 }
             })
 
+            cum_cg += stk_cg
+            cum_pg += stk_pg_signed
+            cum_cd += stk_cd
+            cum_pd += stk_pd_signed
+
             rolling_strikes.append(k)
-            rolling_call_gex.append(round(stk_cg, 2))
-            rolling_put_gex.append(round(stk_pg, 2))
-            rolling_call_dex.append(round(stk_cd, 2))
-            rolling_put_dex.append(round(stk_pd, 2))
+            rolling_call_gex.append(round(cum_cg, 2))
+            rolling_put_gex.append(round(cum_pg, 2))
+            rolling_call_dex.append(round(cum_cd, 2))
+            rolling_put_dex.append(round(cum_pd, 2))
 
         # Step 3: Compute global metrics & zero gamma flip level
         net_gex = tot_call_gex - tot_put_gex
@@ -228,7 +269,8 @@ class GexDexCalculator:
 
         zero_gex_level = self._compute_zero_gex_level(sorted_strikes, strike_net_gex_map, spot, call_wall, put_wall)
         gamma_centroid = round(centroid_num / centroid_den, 2) if centroid_den > 0.0 else spot
-        call_put_ratio = round(tot_call_gex / tot_put_gex, 2) if tot_put_gex > 0.0 else 1.0
+        call_put_ratio = round(tot_call_dex / tot_put_dex, 6) if tot_put_dex > 0.0 else 1.0
+        call_split_ratio = round((above_spot_call_dex / tot_call_dex) * 100.0, 4) if tot_call_dex > 0.0 else 0.0
 
         gamma_regime = "Positive Gamma (+GEX)" if net_gex >= 0.0 else "Negative Gamma (-GEX)"
 
@@ -237,7 +279,7 @@ class GexDexCalculator:
             "spot_price": round(spot, 2),
             "spotPrice": round(spot, 2),
             "call_wall": round(call_wall, 2),
-            "gex_wall": round(call_wall, 2),
+            "gex_wall": round(gex_wall, 2),
             "put_wall": round(put_wall, 2),
             "zero_gex_level": round(zero_gex_level, 2),
             "zero_gamma_flip": round(zero_gex_level, 2),
@@ -250,7 +292,7 @@ class GexDexCalculator:
             "total_put_dex": round(tot_put_dex, 2),
             "call_put_ratio": call_put_ratio,
             "callPutRatio": call_put_ratio,
-            "call_split_ratio": call_put_ratio,
+            "call_split_ratio": call_split_ratio,
             "gamma_regime": gamma_regime,
             "strikes": strikes_payload,
             "rolling": {
