@@ -239,8 +239,19 @@ def resolve_runner(runner_spec: Union[str, Callable]) -> Callable:
                 Path("/volume2/homes/rachardv/git-repos/master") / repo_folder,
             ]
             for cp in candidate_paths:
-                if cp.is_dir() and str(cp) not in sys.path:
+                if cp.is_dir():
+                    if str(cp) in sys.path:
+                        sys.path.remove(str(cp))
                     sys.path.insert(0, str(cp))
+
+            # Isolate top-level namespace collision (e.g. conflicting 'src' packages between repos)
+            if "src" in sys.modules:
+                current_src_file = getattr(sys.modules["src"], "__file__", "") or ""
+                if repo_folder not in current_src_file:
+                    for k in list(sys.modules.keys()):
+                        if k == "src" or k.startswith("src."):
+                            del sys.modules[k]
+
             mod = importlib.import_module(".".join(parts[1:]))
 
         target = getattr(mod, func_name)
