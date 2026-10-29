@@ -7,7 +7,10 @@ from common_lib.extractors.ibkr_options import (
     IBKROptionsExtractor,
     extract_options_chain_snapshot
 )
-from common_lib.extractors.ibkr_gexdex import fetch_gex_dex_payload
+try:
+    from common_lib.extractors.ibkr_gexdex import fetch_gex_dex_payload
+except ImportError:
+    fetch_gex_dex_payload = None
 
 __all__ = [
     "OptionContractRecord",

@@ -10,6 +10,14 @@ from ib_async import IB
 from common_lib.config.main_config import load_config
 from common_lib.extractors.ibkr_gexdex import fetch_gex_dex_payload
 from common_lib.connectors.tradingedge.dexgex import get_authenticated_session, extract_raw_data
+from common_lib.calculators.shadow_comparator import (
+    ShadowComparisonResult,
+    calc_pearson_correlation,
+    calc_lins_ccc,
+    compare_gexdex_payloads,
+    evaluate_wall_with_top2_tolerance,
+    evaluate_regime_with_noise_zone,
+)
 
 
 def check_deep_itm_vendor_artifact(
@@ -434,8 +442,87 @@ def run_gexdex_variance_comparison(
         "exp_passes": exp_passes,
         "exp_warnings": exp_warnings,
         "exp_ignored": exp_ignored,
-        "exp_fails": exp_fails
+        "exp_fails": exp_fails,
+        "granular_wmape": {
+            "call_gex": round(sum(abs(float(ibkr_expirations[e].get("call_gex", 0.0)) - float(te_expirations[e].get("call_gex", 0.0))) for e, _ in valid_exps) / abs(te_tot_call_gex) * 100.0, 2) if abs(te_tot_call_gex) > 0 else 0.0,
+            "put_gex": round(sum(abs(abs(float(ibkr_expirations[e].get("put_gex", 0.0))) - abs(float(te_expirations[e].get("put_gex", 0.0)))) for e in clean_put_exps) / abs(te_tot_put_gex) * 100.0, 2) if abs(te_tot_put_gex) > 0 else 0.0,
+            "call_dex": round(sum(abs(float(ibkr_expirations[e].get("call_dex", 0.0)) - float(te_expirations[e].get("call_dex", 0.0))) for e, _ in valid_exps) / abs(te_tot_call_dex) * 100.0, 2) if abs(te_tot_call_dex) > 0 else 0.0,
+            "put_dex": round(sum(abs(abs(float(ibkr_expirations[e].get("put_dex", 0.0))) - abs(float(te_expirations[e].get("put_dex", 0.0)))) for e in clean_put_exps) / abs(te_tot_put_dex) * 100.0, 2) if abs(te_tot_put_dex) > 0 else 0.0,
+        },
+        "signed_bias": {
+            "call_gex": round(sum(float(ibkr_expirations[e].get("call_gex", 0.0)) - float(te_expirations[e].get("call_gex", 0.0)) for e, _ in valid_exps) / abs(te_tot_call_gex) * 100.0, 2) if abs(te_tot_call_gex) > 0 else 0.0,
+            "put_gex": round(sum(abs(float(ibkr_expirations[e].get("put_gex", 0.0))) - abs(float(te_expirations[e].get("put_gex", 0.0))) for e in clean_put_exps) / abs(te_tot_put_gex) * 100.0, 2) if abs(te_tot_put_gex) > 0 else 0.0,
+            "call_dex": round(sum(float(ibkr_expirations[e].get("call_dex", 0.0)) - float(te_expirations[e].get("call_dex", 0.0)) for e, _ in valid_exps) / abs(te_tot_call_dex) * 100.0, 2) if abs(te_tot_call_dex) > 0 else 0.0,
+            "put_dex": round(sum(abs(float(ibkr_expirations[e].get("put_dex", 0.0))) - abs(float(te_expirations[e].get("put_dex", 0.0))) for e in clean_put_exps) / abs(te_tot_put_dex) * 100.0, 2) if abs(te_tot_put_dex) > 0 else 0.0,
+        },
+        "shadow_comparison": compare_gexdex_payloads(te_data=te_data, ibkr_data=ibkr_payload),
     }
+
+
+def evaluate_and_assert_enhanced_benchmarks(
+    te_data: Dict[str, Any],
+    model_data: Dict[str, Any],
+    min_pearson_r: float = 0.97,
+    min_lins_ccc: float = 0.90,
+    max_granular_wmape_pct: float = 35.0,
+    max_gross_norm_net_err_pct: float = 5.0,
+    max_zero_flip_err_pct: float = 0.25,
+) -> Tuple[ShadowComparisonResult, Dict[str, bool]]:
+    """
+    Evaluates a full-surface GEX/DEX payload against TradingEdge ground truth using the
+    enhanced 5-tier validation framework:
+      1. Pearson r >= 0.98 AND Lin's Concordance Correlation (rho_c) >= 0.96
+      2. Granular (Strike x Expiry) WMAPE & Signed WMPB (preventing cross-expiry cancellation)
+      3. Top-2 Magnitude Tolerance (<= 3%) for Call/Put Walls
+      4. Zero-Gamma Noise Zone Guard (NGR < 2% -> NEUTRAL / FLIP_ZONE)
+      5. Gross-Normalized Net Exposure Error
+    """
+    res = compare_gexdex_payloads(te_data=te_data, ibkr_data=model_data)
+
+    gates = {
+        "gex_pearson_r_pass": res.gex_profile_corr >= min_pearson_r,
+        "dex_pearson_r_pass": res.dex_profile_corr >= min_pearson_r,
+        "gex_lins_ccc_pass": res.gex_lins_ccc >= min_lins_ccc,
+        "dex_lins_ccc_pass": res.dex_lins_ccc >= min_lins_ccc,
+        "granular_call_dex_wmape_pass": res.granular_wmape.get("call_dex", 100.0) <= max_granular_wmape_pct,
+        "granular_put_dex_wmape_pass": res.granular_wmape.get("put_dex", 100.0) <= max_granular_wmape_pct,
+        "call_wall_tolerance_pass": res.call_wall_within_tolerance,
+        "put_wall_tolerance_pass": res.put_wall_within_tolerance,
+        "regime_match_pass": res.regime_matched,
+        "gross_norm_net_gex_pass": res.gross_norm_net_gex_err_pct <= max_gross_norm_net_err_pct
+        if res.in_flip_noise_zone
+        else res.gross_norm_net_gex_err_pct <= 25.0,
+        "zero_flip_pass": res.zero_flip_diff_pct <= max_zero_flip_err_pct,
+    }
+    return res, gates
+
+
+def assert_enhanced_gexdex_benchmarks(
+    te_data: Dict[str, Any],
+    model_data: Dict[str, Any],
+    min_pearson_r: float = 0.97,
+    min_lins_ccc: float = 0.90,
+    max_granular_wmape_pct: float = 35.0,
+) -> ShadowComparisonResult:
+    """
+    Pytest assertion helper enforcing the 4 enhanced mathematical blind-spot guards.
+    """
+    res, gates = evaluate_and_assert_enhanced_benchmarks(
+        te_data=te_data,
+        model_data=model_data,
+        min_pearson_r=min_pearson_r,
+        min_lins_ccc=min_lins_ccc,
+        max_granular_wmape_pct=max_granular_wmape_pct,
+    )
+    failed = {k: v for k, v in gates.items() if not v}
+    assert not failed, (
+        f"Enhanced GEX/DEX Benchmark Failure for {res.ticker}: {list(failed.keys())} | "
+        f"Pearson(GEX={res.gex_profile_corr:.4f}, DEX={res.dex_profile_corr:.4f}) | "
+        f"LinCCC(GEX={res.gex_lins_ccc:.4f}, DEX={res.dex_lins_ccc:.4f}) | "
+        f"GranularWMAPE={res.granular_wmape} | SignedBias={res.signed_bias} | "
+        f"WallsWithinTol={res.wall_within_tolerance} | Regime={res.regime_classification} (Matched={res.regime_matched})"
+    )
+    return res
 
 
 # Pytest Parameterized Test Suite
@@ -452,6 +539,7 @@ else:
     ]
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize("ticker,strike", TEST_PARAMS)
 def test_gexdex_variance_parameterized(ticker: str, strike: float):
     summary = run_gexdex_variance_comparison(

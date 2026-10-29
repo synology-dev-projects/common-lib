@@ -12,7 +12,10 @@ try:
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-    from ib_insync import IB, Stock, Index, Option, Contract, Ticker
+    try:
+        from ib_insync import IB, Stock, Index, Option, Contract, Ticker
+    except ImportError:
+        from ib_async import IB, Stock, Index, Option, Contract, Ticker
 except (ImportError, RuntimeError):
     IB = None
     Stock = None

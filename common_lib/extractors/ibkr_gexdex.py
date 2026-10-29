@@ -5,7 +5,15 @@ from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
 from typing import List, Dict, Any, Optional, Set, Sequence, Tuple
 
-from ib_async import IB, Stock, Index, Option, Contract, Ticker
+try:
+    from ib_async import IB, Stock, Index, Option, Contract, Ticker
+except ImportError:
+    IB = None
+    Stock = None
+    Index = None
+    Option = None
+    Contract = None
+    Ticker = None
 
 from common_lib.extractors.ibkr_options import OptionContractRecord
 from common_lib.connectors.cboe_oi import fetch_cboe_open_interest, fetch_cboe_delayed_data
