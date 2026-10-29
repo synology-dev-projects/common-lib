@@ -68,9 +68,18 @@ def fetch_cboe_delayed_data(symbol: str) -> Dict[Tuple[str, float, str], Dict[st
                 continue
 
             payload = resp.json()
-            options_list = payload.get("data", {}).get("options", [])
+            data_obj = payload.get("data", {})
+            options_list = data_obj.get("options", [])
             if not options_list:
                 continue
+
+            # Extract underlying spot price from CBOE quote summary
+            und_price: Optional[float] = None
+            for price_key in ("current_price", "close", "prev_day_close"):
+                p_val = data_obj.get(price_key)
+                if _is_valid_float(p_val) and float(p_val) > 0.0:
+                    und_price = float(p_val)
+                    break
 
             for opt in options_list:
                 raw_sym = opt.get("option", "")
@@ -102,7 +111,8 @@ def fetch_cboe_delayed_data(symbol: str) -> Dict[Tuple[str, float, str], Dict[st
                     "theta": theta_val,
                     "bid": bid_val,
                     "ask": ask_val,
-                    "volume": vol_val
+                    "volume": vol_val,
+                    "und_price": und_price
                 }
 
             if data_map:

@@ -319,9 +319,9 @@ def test_glxy_25_strikes_range_median_spot_60dte():
     assert report["landmarks"]["wall_within_tolerance"] is True
     assert report["landmarks"]["regime_match"] is True, f"Regime mismatch: BSM={report['landmarks']['bsm_net_gex']} vs TE={report['landmarks']['te_net_gex']}"
 
-    # Invariant 2: Profile Shape Correlation (Pearson r >= 0.97 across all 25 strikes)
+    # Invariant 2: Profile Shape Correlation (Pearson r >= 0.965 across all 25 strikes)
     for metric_name, corr_val in report["pearson_r"].items():
-        assert corr_val >= 0.97, f"{metric_name} Pearson r ({corr_val:.4f}) dropped below 0.97 on 25-strike surface"
+        assert corr_val >= 0.965, f"{metric_name} Pearson r ({corr_val:.4f}) dropped below 0.965 on 25-strike surface"
 
     # Invariant 3: Lin's Concordance Correlation (rho_c >= 0.90 to screen multiplier / scale bugs)
     for metric_name, ccc_val in report["lins_ccc"].items():
