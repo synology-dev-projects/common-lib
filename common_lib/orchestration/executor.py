@@ -289,10 +289,21 @@ def run_dag_cycle(
     cycle_start = time.time()
 
     for name in target_pipelines:
+        pipe_session_date = session_date
+        # Quant levels evaluates today's session during morning trading hours (at or after 06:30 ET)
+        if name == "quant_levels" and not from_pipeline and not only_pipeline:
+            try:
+                import zoneinfo
+                et_now = datetime.now(zoneinfo.ZoneInfo("America/New_York"))
+                if et_now.weekday() < 5 and (et_now.hour > 6 or (et_now.hour == 6 and et_now.minute >= 30)):
+                    pipe_session_date = et_now.date()
+            except Exception:
+                pass
+
         res = execute_single_pipeline(
             engine=engine,
             pipeline_name=name,
-            session_date=session_date,
+            session_date=pipe_session_date,
             force_refresh=force_all,
             dag=dag,
         )
