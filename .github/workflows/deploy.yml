@@ -119,8 +119,17 @@ jobs:
             pip-compile requirements.in --output-file=requirements.txt
           fi
           
-          echo "📦 Installing dependencies..."
-          pip install -r requirements.txt
+          echo "📦 Evaluating dependencies..."
+          CURRENT_HASH=$(md5sum requirements.txt 2>/dev/null | cut -d' ' -f1 || echo "none")
+          STORED_HASH=$(cat .requirements.hash 2>/dev/null || echo "")
+          if [ "$CURRENT_HASH" != "$STORED_HASH" ]; then
+            echo "📦 requirements.txt changed ($STORED_HASH -> $CURRENT_HASH). Installing dependencies..."
+            pip install --upgrade pip
+            pip install -r requirements.txt
+            echo "$CURRENT_HASH" > .requirements.hash
+          else
+            echo "⚡ requirements.txt unchanged ($CURRENT_HASH). Skipping redundant pip install!"
+          fi
           
           # 4. Add to Path (so verify.sh finds it)
           echo "$PWD/.venv/bin" >> $GITHUB_PATH
@@ -147,4 +156,4 @@ jobs:
           echo "📡 Verifying common-lib package import..."
           cd "${{ env.DEPLOY_DIR }}"
           export PATH="$(pwd)/.venv/bin:$PATH"
-          python -c "import sys, common_lib; print('✅ common_lib package imports cleanly on Python', sys.version)"
+          python -c "import sys, common_lib; print('✅ common_lib package imports cleanly on Python', sys.version)"
