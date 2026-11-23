@@ -111,14 +111,9 @@ def test_extract_raw_data_backs_off_and_retries_once_on_429():
 
 
 def test_prefect_snapshot_retry_strategy_avoids_rate_limit_storm():
-    """execute_snapshot must not retry 2x with 10s delay inside the same 60s rate-limit window."""
+    """execute_snapshot must not auto-retry full 45-ticker scrapes on loud failure (retries == 0)."""
     from common_lib.orchestration import prefect_flow
 
-    assert prefect_flow.execute_snapshot.retries <= 1, (
-        f"execute_snapshot retries={prefect_flow.execute_snapshot.retries} is too aggressive"
-    )
-    delay = prefect_flow.execute_snapshot.retry_delay_seconds
-    min_delay = min(delay) if isinstance(delay, (list, tuple)) else delay
-    assert min_delay >= 65, (
-        f"execute_snapshot retry_delay_seconds={delay} must be >= 65s to clear 60s rate-limit window"
+    assert prefect_flow.execute_snapshot.retries == 0, (
+        f"execute_snapshot retries={prefect_flow.execute_snapshot.retries} must be 0 to prevent whole-pipeline retry storms"
     )

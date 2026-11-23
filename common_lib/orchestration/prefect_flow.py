@@ -106,7 +106,7 @@ def execute_unusual_flow(session_date: Optional[str] = None) -> Dict[str, Any]:
     return {"status": "SUCCESS", "pipeline": "unusual_options_flow", "session_date": session_date}
 
 
-@task(name="execute-snapshot", retries=1, retry_delay_seconds=90)
+@task(name="execute-snapshot", retries=0)
 def execute_snapshot(session_date: Optional[str] = None) -> Dict[str, Any]:
     """Executes the GEX/DEX Snapshot daily pipeline (rate limited to <50 requests)."""
     logger.info(f"🚀 [Prefect] Starting GEX/DEX Snapshot Pipeline for session: {session_date or 'latest'}")
