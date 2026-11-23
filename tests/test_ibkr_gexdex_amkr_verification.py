@@ -1,5 +1,8 @@
 import math
-from datetime import date
+from datetime import date, timedelta
+
+_FUTURE_EXP_A = (date.today() + timedelta(days=14)).strftime("%Y%m%d")
+_FUTURE_EXP_B = (date.today() + timedelta(days=21)).strftime("%Y%m%d")
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch, call
 import pytest
@@ -57,7 +60,7 @@ def test_fetch_gex_dex_payload_contract_selection_and_pacing():
         exchange="SMART",
         tradingClass="AMKR",
         multiplier="100",
-        expirations=["20261023", "20261030"],
+        expirations=[_FUTURE_EXP_A, _FUTURE_EXP_B],
         strikes=[38.0, 39.0, 40.0, 41.0, 42.0]
     )
     mock_ib.reqSecDefOptParams.return_value = [mock_chain]
@@ -107,7 +110,7 @@ def test_fetch_gex_dex_payload_strike_range_filtering():
         exchange="SMART",
         tradingClass="AMKR",
         multiplier="100",
-        expirations=["20261030"],
+        expirations=[_FUTURE_EXP_B],
         strikes=[35.0, 36.0, 37.0, 38.0, 39.0, 40.0, 41.0, 42.0, 43.0, 44.0, 45.0]
     )
     mock_ib.reqSecDefOptParams.return_value = [mock_chain]
@@ -145,7 +148,7 @@ def test_fetch_gex_dex_payload_disconnect_resilience():
         exchange="SMART",
         tradingClass="AMKR",
         multiplier="100",
-        expirations=["20261030"],
+        expirations=[_FUTURE_EXP_B],
         strikes=[40.0]
     )
     mock_ib.reqSecDefOptParams.return_value = [mock_chain]
@@ -165,6 +168,7 @@ def test_fetch_gex_dex_payload_disconnect_resilience():
     mock_ib.errorEvent.__isub__.assert_called_once()
 
 
+@pytest.mark.integration
 def test_amkr_strike_40_variance_against_live_tradingedge():
     """
     Pulls live TradingEdge data for AMKR and compares the GEX/DEX numbers
@@ -271,6 +275,7 @@ def test_amkr_strike_40_variance_against_live_tradingedge():
         assert put_dex_variance <= 0.05, f"Put DEX variance {put_dex_variance:.4f} > 5% ({calc_put_dex} vs {te_put_dex})"
 
 
+@pytest.mark.integration
 def test_glxy_strike_20_variance_against_live_tradingedge():
     """
     Pulls live TradingEdge data for GLXY and compares the GEX/DEX numbers
@@ -383,7 +388,7 @@ def test_fetch_gex_dex_payload_ticker_level_atomicity_error():
         exchange="SMART",
         tradingClass="AMKR",
         multiplier="100",
-        expirations=["20261030"],
+        expirations=[_FUTURE_EXP_B],
         strikes=[40.0]
     )
     mock_ib.reqSecDefOptParams.return_value = [mock_chain]

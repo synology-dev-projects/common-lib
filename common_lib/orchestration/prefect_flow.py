@@ -27,8 +27,12 @@ except ImportError:
 
     def task(*args, **kwargs):
         def decorator(f):
+            f.retries = kwargs.get("retries", 0)
+            f.retry_delay_seconds = kwargs.get("retry_delay_seconds", 0)
             return f
         if len(args) == 1 and callable(args[0]):
+            args[0].retries = 0
+            args[0].retry_delay_seconds = 0
             return args[0]
         return decorator
 
@@ -74,7 +78,7 @@ def execute_quant_levels(session_date: Optional[str] = None) -> Dict[str, Any]:
     return {"status": "SUCCESS", "pipeline": "quant_levels", "session_date": session_date}
 
 
-@task(name="execute-unusual-flow", retries=2, retry_delay_seconds=10)
+@task(name="execute-unusual-flow", retries=1, retry_delay_seconds=65)
 def execute_unusual_flow(session_date: Optional[str] = None) -> Dict[str, Any]:
     """Executes the Unusual Options Flow daily incremental pipeline."""
     logger.info(f"🚀 [Prefect] Starting Unusual Options Flow Pipeline for session: {session_date or 'latest'}")
@@ -102,7 +106,7 @@ def execute_unusual_flow(session_date: Optional[str] = None) -> Dict[str, Any]:
     return {"status": "SUCCESS", "pipeline": "unusual_options_flow", "session_date": session_date}
 
 
-@task(name="execute-snapshot", retries=2, retry_delay_seconds=10)
+@task(name="execute-snapshot", retries=1, retry_delay_seconds=90)
 def execute_snapshot(session_date: Optional[str] = None) -> Dict[str, Any]:
     """Executes the GEX/DEX Snapshot daily pipeline (rate limited to <50 requests)."""
     logger.info(f"🚀 [Prefect] Starting GEX/DEX Snapshot Pipeline for session: {session_date or 'latest'}")

@@ -83,7 +83,7 @@ class MainConfig(BaseSettings):
 
     # --- #API Constants (Can be defaults since they rarely change) --- #
     te_base_url: str = "https://tradingedge.club/api/web/v1/spaces/20140900/feed"
-    te_user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36..."
+    te_user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
     # Pydantic Config: Tells it to look for a file named .env
     model_config = SettingsConfigDict(

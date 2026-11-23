@@ -16,7 +16,7 @@ def get_authenticated_flow_session(config: MainConfig) -> requests.Session:
     """
     session = requests.Session()
     session.headers.update({
-        "User-Agent": getattr(config, "te_user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
+        "User-Agent": getattr(config, "te_user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"),
         "Referer": "https://flow.tradingedge.club/"
     })
     

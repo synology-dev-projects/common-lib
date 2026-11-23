@@ -1,5 +1,11 @@
 from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
+
+_FUTURE_EXP_1 = (date.today() + timedelta(days=14)).strftime("%Y%m%d")
+_FUTURE_EXP_1_ISO = (date.today() + timedelta(days=14)).strftime("%Y-%m-%d")
+_FUTURE_EXP_2 = (date.today() + timedelta(days=28)).strftime("%Y%m%d")
+_FUTURE_EXP_2_ISO = (date.today() + timedelta(days=28)).strftime("%Y-%m-%d")
 from unittest.mock import MagicMock, patch
 import pytest
 
@@ -23,7 +29,7 @@ def test_reproduce_cboe_oi_integration_and_snapshot_retry():
         exchange="SMART",
         tradingClass="AMKR",
         multiplier="100",
-        expirations=["20261030"],
+        expirations=[_FUTURE_EXP_1],
         strikes=[40.0]
     )
     mock_ib.reqSecDefOptParams.return_value = [mock_chain]
@@ -39,8 +45,8 @@ def test_reproduce_cboe_oi_integration_and_snapshot_retry():
 
     # Mock CBOE returning official OCC open interest (86 for Call)
     cboe_mock_map = {
-        ("20261030", 40.0, "C"): 86.0,
-        ("20261030", 40.0, "P"): 251.0
+        (_FUTURE_EXP_1, 40.0, "C"): 86.0,
+        (_FUTURE_EXP_1, 40.0, "P"): 251.0
     }
 
     with patch("common_lib.extractors.ibkr_gexdex.fetch_cboe_open_interest", return_value=cboe_mock_map):
@@ -53,7 +59,7 @@ def test_reproduce_cboe_oi_integration_and_snapshot_retry():
         )
 
     stk40 = payload["strikes"][0]
-    m = stk40["expirations"]["2026-10-30"]
+    m = stk40["expirations"][_FUTURE_EXP_1_ISO]
 
     # If CBOE OI (86) was properly used instead of decayed IBKR OI (22):
     # Call GEX with 86 OI at spot 39.05 & gamma 0.0628 should be > $700,000 (not ~$214,000)
@@ -77,7 +83,7 @@ def test_reproduce_cboe_greek_fallback_when_ibkr_greeks_missing():
         exchange="SMART",
         tradingClass="AMKR",
         multiplier="100",
-        expirations=["20261120"],
+        expirations=[_FUTURE_EXP_2],
         strikes=[40.0]
     )
     mock_ib.reqSecDefOptParams.return_value = [mock_chain]
@@ -93,7 +99,7 @@ def test_reproduce_cboe_greek_fallback_when_ibkr_greeks_missing():
 
     # CBOE official exchange delayed quotes provides the settlement Greeks
     cboe_delayed_map = {
-        ("20261120", 40.0, "C"): {
+        (_FUTURE_EXP_2, 40.0, "C"): {
             "open_interest": 92.0,
             "gamma": 0.0456,
             "delta": 0.5239,
@@ -104,7 +110,7 @@ def test_reproduce_cboe_greek_fallback_when_ibkr_greeks_missing():
             "ask": 4.0,
             "volume": 4.0
         },
-        ("20261120", 40.0, "P"): {
+        (_FUTURE_EXP_2, 40.0, "P"): {
             "open_interest": 636.0,
             "gamma": 0.0459,
             "delta": -0.4777,
@@ -127,7 +133,7 @@ def test_reproduce_cboe_greek_fallback_when_ibkr_greeks_missing():
         )
 
     stk40 = payload["strikes"][0]
-    m = stk40["expirations"]["2026-11-20"]
+    m = stk40["expirations"][_FUTURE_EXP_2_ISO]
 
     # Verify that Greeks were resolved from CBOE settlement data
     assert m["call_gex"] > 500000.0, f"Expected Call GEX > $500k, got {m['call_gex']}"

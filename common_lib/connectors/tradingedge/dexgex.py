@@ -117,7 +117,15 @@ def get_authenticated_session(config: MainConfig, force_refresh: bool = False) -
             time.sleep(wait_time)
             post_response = session.post(login_gate, data=payload, timeout=10.0)
 
-        if post_response.status_code in [200, 302] and "Sessions expire" not in post_response.text:
+        post_url = str(getattr(post_response, "url", "") or "").lower()
+        post_text_lower = str(getattr(post_response, "text", "") or "").lower()
+        login_rejected = (
+            "/login" in post_url
+            or "sessions expire" in post_text_lower
+            or "do not match our records" in post_text_lower
+        )
+
+        if post_response.status_code in [200, 302] and not login_rejected:
             logging.info("TradingEdge authentication successful! Session cached.")
             _cached_session = session
             _last_auth_time = time.time()
@@ -128,7 +136,7 @@ def get_authenticated_session(config: MainConfig, force_refresh: bool = False) -
                 pass
             return _cached_session
         else:
-            logging.error(f"Authentication failed. Status: {post_response.status_code}")
+            logging.error(f"Authentication failed. Status: {post_response.status_code}, URL: {post_url}")
             return None
     except Exception as e:
         logging.error(f"Session authentication error: {e}")
@@ -201,7 +209,29 @@ def extract_raw_data(
             elif response.status_code in (400, 404):
                 logging.warning(f"TradingEdge returned HTTP {response.status_code} for ticker {ticker}. Ticker may be invalid or delisted.")
                 return None
-            elif response.status_code in (429, 500, 502, 503, 504):
+            elif response.status_code == 429:
+                retry_after_raw = getattr(response, "headers", {}).get("Retry-After", 61)
+                try:
+                    wait_sec = min(max(int(retry_after_raw) + 1, 5), 90)
+                except (TypeError, ValueError):
+                    wait_sec = 61
+                logging.warning(f"TradingEdge returned HTTP 429 for {ticker}. Backing off {wait_sec}s before single retry...")
+                time.sleep(wait_sec)
+                if isinstance(session_or_cookie, requests.Session) or hasattr(session_or_cookie, "get"):
+                    retry_429 = session_or_cookie.get(dex_gex_url, timeout=15.0)
+                else:
+                    retry_429 = requests.get(dex_gex_url, headers=headers, timeout=15.0)
+                if retry_429 is not None and retry_429.status_code == 200:
+                    try:
+                        raw_data = retry_429.json()
+                        if isinstance(raw_data, dict) and ("ticker" in raw_data or "spot_price" in raw_data or "spotPrice" in raw_data):
+                            logging.info(f"Success: 200 retrieved live data for {ticker} after 429 backoff")
+                            return raw_data
+                    except Exception:
+                        pass
+                logging.warning(f"TradingEdge 429 retry failed for {ticker} (status={getattr(retry_429, 'status_code', None)}).")
+                return None
+            elif response.status_code in (500, 502, 503, 504):
                 logging.warning(f"TradingEdge server returned HTTP {response.status_code} for {ticker}. Not an auth expiration.")
                 return None
     except Exception as req_err:

@@ -180,6 +180,7 @@ def test_evaluate_bsm_vs_tradingedge_accuracy_metrics():
     assert report["benchmarks_passed"] is True
 
 
+@pytest.mark.integration
 def test_glxy_strike_20_60dte_tradingedge_ground_truth():
     """
     Live parameterized verification for GLXY @ 20 strike across all contracts up to 60 DTE
@@ -241,6 +242,7 @@ def test_glxy_strike_20_60dte_tradingedge_ground_truth():
     assert report["benchmarks_passed"] is True, f"Failed benchmarks: {report['benchmarks']}"
 
 
+@pytest.mark.integration
 def test_glxy_25_strikes_range_median_spot_60dte():
     """
     Expanded structural verification for GLXY across all 25 strikes centered on spot
